@@ -1,0 +1,11 @@
+# Core Web Framework and Server
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+python-multipart>=0.0.9
+
+# Security & Authentication
+pyjwt>=2.8.0
+bcrypt>=4.1.2
+
+# Network & Utilities (with fallback simulation for environments without Npcap)
+requests>=2.31.0

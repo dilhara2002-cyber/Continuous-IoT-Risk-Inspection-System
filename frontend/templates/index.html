@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secure IoT Device Discovery & Risk Management System</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <!-- Header (Chapter 11.2) -->
+  <header class="app-header">
+    <div class="brand-section">
+      <span class="brand-icon">🛡️</span>
+      <div>
+        <h1 class="brand-title">Secure IoT Risk Management System</h1>
+        <div class="brand-sub">Smart Office Network Visibility & Defense | SLIIT Group 14</div>
+      </div>
+    </div>
+    <div class="user-section">
+      <div class="user-badge">
+        <span id="user-display-name">Loading user...</span>
+        <span id="user-role-badge" class="role-tag">ADMIN</span>
+      </div>
+      <button id="logout-btn" class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+    </div>
+  </header>
+
+  <!-- Main Application Body -->
+  <div class="app-container">
+    <!-- Navigation Sidebar (Item 3) -->
+    <aside class="sidebar">
+      <div class="nav-item active" data-view="dashboard-view" id="nav-dashboard">
+        <span>📊</span> Main Dashboard
+      </div>
+      <div class="nav-item" data-view="discovery-view" id="nav-discovery">
+        <span>📡</span> Device Discovery
+      </div>
+      <div class="nav-item" data-view="info-view" id="nav-info">
+        <span>💻</span> Device Information
+      </div>
+      <div class="nav-item" data-view="classification-view" id="nav-classification">
+        <span>🏷️</span> Device Classification
+      </div>
+      <div class="nav-item" data-view="risk-view" id="nav-risk">
+        <span>⚖️</span> Risk Assessment
+      </div>
+      <div class="nav-item" data-view="alerts-view" id="nav-alerts">
+        <span>⚠️</span> Security Alerts
+        <span id="unresolved-alert-count" class="badge badge-high" style="margin-left: auto; display: none;">0</span>
+      </div>
+      <div class="nav-item" data-view="audit-view" id="nav-audit">
+        <span>📜</span> Audit History
+      </div>
+
+      <div class="sidebar-bottom">
+        <div style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-bottom: 0.5rem;">
+          Active Network: <code>192.168.1.0/24</code>
+        </div>
+        <button class="btn" style="width: 100%; justify-content: center;" onclick="quickScan()">
+          ⚡ Quick Discovery Scan
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="content-area">
+
+      <!-- ================================================================= -->
+      <!-- 1. MAIN DASHBOARD VIEW (Item 2)                                   -->
+      <!-- ================================================================= -->
+      <section id="dashboard-view" class="view-section active">
+        <div class="page-title-row">
+          <div>
+            <h2 class="page-title">Main Dashboard</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Overview of smart office IoT visibility, classifications, and security posture</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadDashboardOverview()">🔄 Refresh Dashboard</button>
+        </div>
+
+        <!-- Metric Stat Cards -->
+        <div class="stats-grid">
+          <div class="stat-card primary">
+            <div class="stat-label">Total Discovered Devices</div>
+            <div id="dash-stat-total" class="stat-value">0</div>
+          </div>
+          <div class="stat-card danger">
+            <div class="stat-label">High Risk Devices (61-100)</div>
+            <div id="dash-stat-high" class="stat-value">0</div>
+          </div>
+          <div class="stat-card warning">
+            <div class="stat-label">Medium Risk (31-60)</div>
+            <div id="dash-stat-medium" class="stat-value">0</div>
+          </div>
+          <div class="stat-card success">
+            <div class="stat-label">Low Risk (0-30)</div>
+            <div id="dash-stat-low" class="stat-value">0</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 3fr 2fr; gap: 1.5rem; margin-bottom: 2rem;">
+          <!-- Recent Critical Alerts Summary -->
+          <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <h3 style="font-size: 1.1rem;">Active Security Alerts</h3>
+              <button class="btn btn-secondary btn-sm" onclick="navigateTo('alerts-view')">View All Alerts →</button>
+            </div>
+            <div id="dash-recent-alerts">
+              <div style="color: var(--text-muted); font-size: 0.85rem;">Loading alerts...</div>
+            </div>
+          </div>
+
+          <!-- Network Classification Summary -->
+          <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <h3 style="font-size: 1.1rem;">Device Categories</h3>
+              <button class="btn btn-secondary btn-sm" onclick="navigateTo('classification-view')">Details →</button>
+            </div>
+            <div id="dash-category-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <!-- Dynamic bars -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- 2. DEVICE DISCOVERY PAGE (Item 4)                                -->
+      <!-- ================================================================= -->
+      <section id="discovery-view" class="view-section">
+        <div class="page-title-row">
+          <div>
+            <h2 class="page-title">Device Discovery</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Automated discovery of IoT devices on authorized smart office network segments</p>
+          </div>
+        </div>
+
+        <!-- Discovery Controls Box -->
+        <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 2rem;">
+          <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">Initiate Network Scan</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+            Non-intrusive scanning utilizes ARP host sweeps and passive service observation (DHCP/mDNS) according to responsible security standards.
+          </p>
+
+          <div style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 1rem; align-items: end;">
+            <div>
+              <label class="form-label" for="scan-subnet">Target Subnet / IP Range</label>
+              <input type="text" id="scan-subnet" class="form-input" value="192.168.1.0/24">
+            </div>
+            <div>
+              <label class="form-label" for="scan-mode">Discovery Method</label>
+              <select id="scan-mode" class="filter-select" style="width: 100%;">
+                <option value="simulated">Smart Office Testbed (Simulated LAN)</option>
+                <option value="active">Active Local Host Sweep (ARP/Socket)</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Network Status</label>
+              <div style="padding: 0.75rem; background-color: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius); color: #34d399; font-size: 0.85rem; text-align: center;">
+                ● Authorized LAN
+              </div>
+            </div>
+            <div>
+              <button id="exec-scan-btn" class="btn" onclick="executeDiscoveryScan()" style="height: 42px;">
+                ⚡ Start Discovery Scan
+              </button>
+            </div>
+          </div>
+
+          <div id="scan-feedback" style="margin-top: 1rem; display: none; padding: 0.75rem; border-radius: var(--radius); font-size: 0.85rem;"></div>
+        </div>
+
+        <!-- Discovered Assets Table -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h3 style="font-size: 1.1rem;">Discovered Network Inventory</h3>
+          <span style="font-size: 0.85rem; color: var(--text-muted);">Auto-updating from discovery pipeline</span>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>IP Address</th>
+                <th>MAC Address</th>
+                <th>Hostname</th>
+                <th>Detection Method</th>
+                <th>First Seen</th>
+                <th>Last Seen</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="discovery-table-body">
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">No scan executed yet. Click "Start Discovery Scan" above.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- 3. DEVICE INFORMATION PAGE (Item 5)                              -->
+      <!-- ================================================================= -->
+      <section id="info-view" class="view-section">
+        <div class="page-title-row">
+          <div>
+            <h2 class="page-title">Device Information</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Comprehensive inventory, network interfaces, open services, and firmware details</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadDeviceInventory()">🔄 Refresh List</button>
+        </div>
+
+        <!-- Search & Filter Controls -->
+        <div class="controls-bar">
+          <input type="text" id="info-search" class="search-input" placeholder="Search by hostname, IP address, MAC, or manufacturer..." oninput="filterDeviceInventory()">
+          <select id="info-filter-type" class="filter-select" onchange="filterDeviceInventory()">
+            <option value="">All Categories</option>
+            <option value="CCTV Camera">CCTV Camera</option>
+            <option value="Printer">Printer</option>
+            <option value="Smart Lock">Smart Lock</option>
+            <option value="Sensor">Sensor</option>
+            <option value="Smart Plug">Smart Plug</option>
+            <option value="Network Device">Network Device</option>
+            <option value="Unknown Device">Unknown Device</option>
+          </select>
+          <select id="info-filter-status" class="filter-select" onchange="filterDeviceInventory()">
+            <option value="">All Statuses</option>
+            <option value="Online">Online</option>
+            <option value="Offline">Offline</option>
+          </select>
+        </div>
+
+        <!-- Device Info Table -->
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Hostname / Name</th>
+                <th>IP Address</th>
+                <th>MAC Address</th>
+                <th>Manufacturer</th>
+                <th>Device Category</th>
+                <th>Firmware Version</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="info-table-body">
+              <tr>
+                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading device information...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- 4. DEVICE CLASSIFICATION PAGE (Item 6)                           -->
+      <!-- ================================================================= -->
+      <section id="classification-view" class="view-section">
+        <div class="page-title-row">
+          <div>
+            <h2 class="page-title">Device Classification</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">OUI manufacturer resolution and rule-based heuristic categorization</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadClassificationData()">🔄 Refresh Classification</button>
+        </div>
+
+        <!-- Methodology Banner -->
+        <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem; font-size: 0.85rem; line-height: 1.6;">
+          <strong>Two-Stage Classification Workflow (Proposal Ch. 6.6 & 7.4):</strong>
+          <br>
+          1. <strong>Stage 1 (Manufacturer Identification):</strong> Extracts first 3 octets (MAC OUI) and queries against the IEEE Vendor database.
+          <br>
+          2. <strong>Stage 2 (Heuristic Inference):</strong> Inspects open port profiles (e.g. RTSP 554, JetDirect 9100) and service banners to infer the device category or fallback to <em>Unknown Device</em>.
+        </div>
+
+        <div class="table-container" style="margin-bottom: 2rem;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Device Hostname</th>
+                <th>MAC & OUI Prefix</th>
+                <th>Identified Vendor</th>
+                <th>Matched Rule / Criteria</th>
+                <th>Inferred Category</th>
+                <th>Confidence</th>
+              </tr>
+            </thead>
+            <tbody id="classification-table-body">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading classification results...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Predefined Classification Rules Reference Table -->
+        <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">System Classification Rule Table</h3>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Target Category</th>
+                <th>Known OUI Vendors</th>
+                <th>Characteristic Ports / Services</th>
+                <th>Hostname Patterns</th>
+                <th>Scope Description</th>
+              </tr>
+            </thead>
+            <tbody id="rules-table-body">
+              <!-- Dynamically populated from /api/classification/rules -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- 5. RISK ASSESSMENT PAGE (Item 7)                                  -->
+      <!-- ================================================================= -->
+      <section id="risk-view" class="view-section">
+        <div class="page-title-row">
+          <div>
+            <h2 class="page-title">Security Risk Assessment</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Multi-factor weighted security evaluation (0-100 Score) based on Proposal Chapter 10</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadRiskAssessmentData()">🔄 Refresh Assessment</button>
+        </div>
+
+        <!-- 5-Factor Model Summary Cards -->
+        <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem;">
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">Chapter 10.8 Scoring Weights & Indicator Framework</h4>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+            <div style="background-color: var(--bg-main); padding: 0.75rem; border-radius: var(--radius); border-left: 3px solid var(--danger);">
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Factor 1 (25 pts)</div>
+              <strong style="font-size: 0.9rem;">Unknown Device</strong>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Unapproved shadow IoT</div>
+            </div>
+            <div style="background-color: var(--bg-main); padding: 0.75rem; border-radius: var(--radius); border-left: 3px solid var(--danger);">
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Factor 2 (25 pts)</div>
+              <strong style="font-size: 0.9rem;">Firmware Risk</strong>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Outdated or CVE-linked</div>
+            </div>
+            <div style="background-color: var(--bg-main); padding: 0.75rem; border-radius: var(--radius); border-left: 3px solid var(--danger);">
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Factor 3 (25 pts)</div>
+              <strong style="font-size: 0.9rem;">Credential Risk</strong>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Default/factory passwords</div>
+            </div>
+            <div style="background-color: var(--bg-main); padding: 0.75rem; border-radius: var(--radius); border-left: 3px solid var(--warning);">
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Factor 4 (15 pts)</div>
+              <strong style="font-size: 0.9rem;">Network Exposure</strong>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Telnet, RTSP, open ports</div>
+            </div>
+            <div style="background-color: var(--bg-main); padding: 0.75rem; border-radius: var(--radius); border-left: 3px solid var(--primary);">
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Factor 5 (10 pts)</div>
+              <strong style="font-size: 0.9rem;">Configuration</strong>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Missing TLS, unencrypted</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Risk Assessment Table -->
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Unknown (25)</th>
+                <th>Firmware (25)</th>
+                <th>Credential (25)</th>
+                <th>Exposure (15)</th>
+                <th>Config (10)</th>
+                <th>Total Risk Score</th>
+                <th>Severity Tier</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="risk-table-body">
+              <tr>
+                <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading risk assessments...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- 6. ALERTS SECTION (Item 8)                                       -->
+      <!-- ================================================================= -->
+      <section id="alerts-view" class="view-section">
+        <div class="page-title-row">
+          <div>
+            <h2 class="page-title">Security Alerts</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Automated notifications for rogue devices, high-risk scores, and credential weaknesses</p>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); cursor: pointer;">
+              <input type="checkbox" id="unresolved-alerts-check" onchange="loadAlerts()"> Unresolved Only
+            </label>
+            <button class="btn btn-secondary btn-sm" onclick="loadAlerts()">🔄 Refresh Alerts</button>
+          </div>
+        </div>
+
+        <!-- Alert Cards Container -->
+        <div id="alerts-feed-container">
+          <div style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading security alerts...</div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- 7. AUDIT LOG VIEW                                                 -->
+      <!-- ================================================================= -->
+      <section id="audit-view" class="view-section">
+        <div class="page-title-row">
+          <div>
+            <h2 class="page-title">Security Audit History</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Append-only record of discovery events, logins, and administrative actions</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadAuditLogs()">🔄 Refresh Logs</button>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Event Type</th>
+                <th>User / Initiator</th>
+                <th>Description</th>
+                <th>Source Address</th>
+              </tr>
+            </thead>
+            <tbody id="audit-table-body">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading audit records...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Device Detail / Risk Factor Modal Dialog -->
+  <div id="detail-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div>
+          <h3 id="modal-device-name" style="font-size: 1.3rem;">Device Inspection</h3>
+          <div id="modal-device-meta" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;"></div>
+        </div>
+        <button class="close-btn" onclick="closeDetailModal()">&times;</button>
+      </div>
+
+      <div id="modal-content">
+        <!-- Injected dynamic content -->
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
