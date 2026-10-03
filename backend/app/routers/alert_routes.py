@@ -40,7 +40,9 @@ def list_alerts(
             title=r["title"],
             description=r["description"],
             is_resolved=bool(r["is_resolved"]),
-            created_at=str(r["created_at"])
+            created_at=str(r["created_at"]),
+            resolved_at=str(r["resolved_at"]) if r["resolved_at"] else None,
+            resolved_by=r["resolved_by"]
         ))
     return results
 
@@ -52,20 +54,45 @@ def resolve_alert(
 ):
     """Marks an alert as resolved or active (Admin only)."""
     conn = get_db_connection()
-    alert = conn.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,)).fetchone()
+    alert = conn.execute("""
+        SELECT a.*, d.hostname as device_hostname 
+        FROM alerts a 
+        LEFT JOIN devices d ON a.device_id = d.id 
+        WHERE a.id = ?
+    """, (alert_id,)).fetchone()
+    
     if not alert:
         conn.close()
         raise HTTPException(status_code=404, detail="Alert not found")
 
-    conn.execute("UPDATE alerts SET is_resolved = ? WHERE id = ?", (1 if payload.is_resolved else 0, alert_id))
-    conn.commit()
+    if payload.is_resolved:
+        if alert["is_resolved"]:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Alert is already resolved")
+        
+        conn.execute(
+            "UPDATE alerts SET is_resolved = 1, resolved_at = CURRENT_TIMESTAMP, resolved_by = ? WHERE id = ?",
+            (current_user["username"], alert_id)
+        )
+        conn.commit()
+        
+        device_ref = alert["device_hostname"] or f"Device ID {alert['device_id']}"
+        audit_logger.log_event(
+            event_type="ALERT_RESOLVED",
+            username=current_user["username"],
+            description=f"Resolved security alert for {device_ref}"
+        )
+        action = "resolved"
+    else:
+        conn.execute("UPDATE alerts SET is_resolved = 0, resolved_at = NULL, resolved_by = NULL WHERE id = ?", (alert_id,))
+        conn.commit()
+        
+        audit_logger.log_event(
+            event_type="ALERT_UPDATED",
+            username=current_user["username"],
+            description=f"Alert #{alert_id} ('{alert['title']}') was marked as reopened"
+        )
+        action = "reopened"
+
     conn.close()
-
-    action = "resolved" if payload.is_resolved else "reopened"
-    audit_logger.log_event(
-        event_type="ALERT_UPDATED",
-        username=current_user["username"],
-        description=f"Alert #{alert_id} ('{alert['title']}') was marked as {action}"
-    )
-
     return {"status": "success", "message": f"Alert #{alert_id} updated"}

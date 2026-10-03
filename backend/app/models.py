@@ -73,6 +73,8 @@ class AlertResponse(BaseModel):
     description: str
     is_resolved: bool
     created_at: Optional[str] = None
+    resolved_at: Optional[str] = None
+    resolved_by: Optional[str] = None
 
 class AlertResolutionUpdate(BaseModel):
     is_resolved: bool

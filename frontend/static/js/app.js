@@ -435,6 +435,7 @@ async function loadAlerts() {
             Severity: <span class="badge ${getRiskBadgeClass(a.severity)}">${a.severity}</span> | 
             Status: <strong>${a.is_resolved ? '✓ Resolved' : '⚠️ Active'}</strong> |
             Logged: ${a.created_at}
+            ${a.is_resolved && a.resolved_by ? `<br>Resolved by: <strong>${escapeHtml(a.resolved_by)}</strong> at ${escapeHtml(a.resolved_at)}` : ''}
           </div>
         </div>
         ${isAdmin ? `
