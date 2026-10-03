@@ -114,6 +114,19 @@ class DeviceDiscoveryService:
                 )
                 device_id = cursor.lastrowid
 
+                audit_logger.log_event(
+                    event_type="DEVICE_DISCOVERED",
+                    username=user,
+                    description=f"New device discovered at {ip} ({mac})",
+                    conn=conn
+                )
+                audit_logger.log_event(
+                    event_type="DEVICE_CLASSIFIED",
+                    username=user,
+                    description=f"Device {ip} classified as {device_type} (Vendor: {manufacturer})",
+                    conn=conn
+                )
+
             # Step 3: Risk Assessment (Module 3)
             risk_result = risk_engine.evaluate_device(dev)
 
@@ -139,6 +152,14 @@ class DeviceDiscoveryService:
                 )
             )
 
+            if is_new:
+                audit_logger.log_event(
+                    event_type="RISK_ASSESSED",
+                    username=user,
+                    description=f"Initial risk assessment completed for {ip} (Score: {risk_result['risk_score']})",
+                    conn=conn
+                )
+
             # Step 4: Alert Evaluation (Module 4)
             alert_mgr.evaluate_and_alert(device_id, dev, risk_result, conn=conn)
 
@@ -148,17 +169,19 @@ class DeviceDiscoveryService:
         conn.close()
 
         # Step 5: Security Audit Log (Module 5)
+        # We can pass conn if we haven't closed it yet, but here we already committed and closed it!
+        # Wait, discovery.py lines 167: conn.close(). Let's let it create a new connection here by not passing it.
         audit_logger.log_event(
             event_type="DISCOVERY_SCAN",
             username=user,
-            description=f"Executed {scan_type} network discovery. Processed {devices_processed} devices ({new_devices_count} newly identified)."
+            description=f"Executed simulated network discovery test scan. Processed {devices_processed} devices ({new_devices_count} newly identified)."
         )
 
         return {
             "status": "success",
             "devices_found": devices_processed,
             "new_devices_added": new_devices_count,
-            "message": f"Successfully completed network discovery scan. {devices_processed} devices active in inventory."
+            "message": f"Successfully completed simulated network discovery test scan. {devices_processed} devices active in inventory."
         }
 
     def _load_seed_devices(self) -> List[Dict[str, Any]]:

@@ -96,7 +96,7 @@ def reevaluate_device_risk(device_id: int, current_user: dict = Depends(require_
     conn.close()
 
     audit_logger.log_event(
-        event_type="RISK_RECALCULATED",
+        event_type="RISK_ASSESSED",
         username=current_user["username"],
         description=f"Recalculated risk for device {device['ip_address']} ({risk_result['risk_level']} - {risk_result['risk_score']}/100)"
     )

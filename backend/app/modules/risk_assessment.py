@@ -74,7 +74,7 @@ class RiskAssessmentEngine:
             findings.append({
                 "factor": "Credential Risk",
                 "score": credential_score,
-                "detail": f"Default or weak credentials present: {device_data.get('credential_status')}"
+                "detail": f"Default credential security indicator detected in the authorized test environment: {device_data.get('credential_status')}"
             })
         elif "unknown" in credential:
             credential_score = 12

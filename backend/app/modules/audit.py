@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Any
 from backend.app.database import get_db_connection
 
 class AuditLogger:
@@ -9,10 +9,14 @@ class AuditLogger:
     """
 
     @staticmethod
-    def log_event(event_type: str, username: str, description: str, ip_source: str = "127.0.0.1"):
+    def log_event(event_type: str, username: str, description: str, ip_source: str = "127.0.0.1", conn: Optional[Any] = None):
         """Inserts an immutable audit record."""
+        should_close = False
         try:
-            conn = get_db_connection()
+            if conn is None:
+                conn = get_db_connection()
+                should_close = True
+                
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -21,8 +25,9 @@ class AuditLogger:
                 """,
                 (event_type, username, description, ip_source)
             )
-            conn.commit()
-            conn.close()
+            if should_close:
+                conn.commit()
+                conn.close()
         except Exception as e:
             print(f"Error writing audit log: {e}")
 
