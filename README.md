@@ -86,7 +86,7 @@ Calculates a transparent, explainable 100-point composite **Risk Score** using t
 ### 2. Setup Environment
 ```bash
 # Navigate to project folder
-cd Continuous-IoT-Risk-Inspection-System
+cd c:\Users\Methuli\OneDrive\Desktop\iot2
 
 # Activate virtual environment
 .\venv\Scripts\activate

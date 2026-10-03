@@ -35,7 +35,7 @@ class AlertManager:
             conn.close()
 
         # Simulated Email Notification (Chapter 11.4: optional administrator notification)
-        if notify_email or severity in ["High", "Critical"]:
+        if notify_email or severity == "High":
             AlertManager._simulate_email_dispatch(title, description, severity)
 
         return alert_id
@@ -70,7 +70,7 @@ class AlertManager:
                 device_id=device_id,
                 alert_type="High Risk Vulnerability",
                 severity="High",
-                title=f"Critical Risk Threshold Exceeded: {hostname}",
+                title=f"High Risk Threshold Exceeded: {hostname}",
                 description=f"Device risk score reached {risk_score}/100. Action required to mitigate exposed vulnerabilities.",
                 notify_email=True,
                 conn=conn
