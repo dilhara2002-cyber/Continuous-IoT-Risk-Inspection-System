@@ -21,7 +21,7 @@ class DeviceDiscoveryService:
     def __init__(self):
         pass
 
-    def run_discovery_pipeline(self, scan_type: str = "simulated", target_subnet: str = "192.168.1.0/24", user: str = "system") -> Dict[str, Any]:
+    def run_discovery_pipeline(self, scan_type: str = "simulated", target_subnet: str = "192.168.1.0/24", user: str = "SYSTEM") -> Dict[str, Any]:
         """Runs an end-to-end discovery cycle as described in Fig. 1 & 2."""
         raw_devices = []
 

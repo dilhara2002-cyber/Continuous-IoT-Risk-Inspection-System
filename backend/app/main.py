@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
     # Pre-populate device inventory if starting fresh
     print("[SYSTEM STARTUP] Running baseline Smart Office discovery pipeline...")
-    discovery_service.run_discovery_pipeline(scan_type="simulated", user="system_init")
+    discovery_service.run_discovery_pipeline(scan_type="simulated", user="SYSTEM")
     print("[SYSTEM STARTUP] System ready.")
     yield
 
