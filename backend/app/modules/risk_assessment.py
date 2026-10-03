@@ -61,7 +61,7 @@ class RiskAssessmentEngine:
             findings.append({
                 "factor": "Firmware Risk",
                 "score": firmware_score,
-                "detail": "Minor firmware updates available; no critical CVE actively identified."
+                "detail": "Minor firmware updates available; no high-severity CVE actively identified."
             })
         else:
             firmware_score = 0

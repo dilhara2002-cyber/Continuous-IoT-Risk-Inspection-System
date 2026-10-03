@@ -601,7 +601,7 @@ async function inspectDevice(deviceId) {
       <div style="background-color: var(--bg-main); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 0.75rem; margin-bottom: 1.5rem; font-size: 0.85rem;">
         ${risk.details && risk.details.length > 0 ? 
           risk.details.map(f => `<div style="margin-bottom: 0.35rem;">• <strong>${escapeHtml(f.factor)}:</strong> ${escapeHtml(f.detail)}</div>`).join("") :
-          `<div style="color: var(--success);">✓ No critical risk indicators flagged for this device.</div>`
+          `<div style="color: var(--success);">✓ No high risk indicators flagged for this device.</div>`
         }
       </div>
 
@@ -679,8 +679,7 @@ async function toggleKnownDevice(deviceId, newStatus) {
    ========================================================================= */
 function getRiskBadgeClass(level) {
   switch ((level || "").toLowerCase()) {
-    case "high":
-    case "critical": return "badge-high";
+    case "high": return "badge-high";
     case "medium": return "badge-medium";
     default: return "badge-low";
   }
