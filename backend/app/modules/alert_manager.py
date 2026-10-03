@@ -1,5 +1,6 @@
 from typing import Optional, Dict, Any
 from backend.app.database import get_db_connection
+from backend.app.modules.audit import audit_logger
 
 class AlertManager:
     """
@@ -37,6 +38,13 @@ class AlertManager:
         # Simulated Email Notification (Chapter 11.4: optional administrator notification)
         if notify_email or severity == "High":
             AlertManager._simulate_email_dispatch(title, description, severity)
+
+        audit_logger.log_event(
+            event_type="ALERT_CREATED",
+            username="SYSTEM",
+            description=f"Generated {severity.upper()} severity alert: {title}",
+            conn=conn
+        )
 
         return alert_id
 
