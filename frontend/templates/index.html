@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Secure IoT Device Discovery & Risk Management System</title>
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css?v=2">
 </head>
 <body>
   <!-- Header (Chapter 11.2) -->
@@ -79,21 +79,21 @@
 
         <!-- Metric Stat Cards -->
         <div class="stats-grid">
-          <div class="stat-card primary">
-            <div class="stat-label">Total Discovered Devices</div>
+          <div class="stat-card" style="border-top: 3px solid var(--primary);">
+            <div class="stat-label">Total Devices</div>
             <div id="dash-stat-total" class="stat-value">0</div>
           </div>
-          <div class="stat-card danger">
-            <div class="stat-label">High Risk Devices (61-100)</div>
-            <div id="dash-stat-high" class="stat-value">0</div>
+          <div class="stat-card" style="border-top: 3px solid var(--danger);">
+            <div class="stat-label">High Risk</div>
+            <div id="dash-stat-high" class="stat-value" style="color: var(--danger);">0</div>
           </div>
-          <div class="stat-card warning">
-            <div class="stat-label">Medium Risk (31-60)</div>
-            <div id="dash-stat-medium" class="stat-value">0</div>
+          <div class="stat-card" style="border-top: 3px solid var(--warning);">
+            <div class="stat-label">Medium Risk</div>
+            <div id="dash-stat-medium" class="stat-value" style="color: var(--warning);">0</div>
           </div>
-          <div class="stat-card success">
-            <div class="stat-label">Low Risk (0-30)</div>
-            <div id="dash-stat-low" class="stat-value">0</div>
+          <div class="stat-card" style="border-top: 3px solid var(--success);">
+            <div class="stat-label">Low Risk</div>
+            <div id="dash-stat-low" class="stat-value" style="color: var(--success);">0</div>
           </div>
         </div>
 
@@ -266,7 +266,7 @@
 
         <!-- Methodology Banner -->
         <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem; font-size: 0.85rem; line-height: 1.6;">
-          <strong>Two-Stage Classification Workflow (Proposal Ch. 6.6 & 7.4):</strong>
+          <strong>Two-Stage Classification Workflow:</strong>
           <br>
           1. <strong>Stage 1 (Manufacturer Identification):</strong> Extracts first 3 octets (MAC OUI) and queries against the IEEE Vendor database.
           <br>
@@ -320,14 +320,14 @@
         <div class="page-title-row">
           <div>
             <h2 class="page-title">Security Risk Assessment</h2>
-            <p style="color: var(--text-muted); font-size: 0.9rem;">Multi-factor weighted security evaluation (0-100 Score) based on Proposal Chapter 10</p>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Multi-factor weighted security evaluation (0–100 score)</p>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="loadRiskAssessmentData()">🔄 Refresh Assessment</button>
         </div>
 
         <!-- 5-Factor Model Summary Cards -->
         <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem;">
-          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">Chapter 10.8 Scoring Weights & Indicator Framework</h4>
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">Risk Scoring Weights & Indicator Framework</h4>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
             <div style="background-color: var(--bg-main); padding: 0.75rem; border-radius: var(--radius); border-left: 3px solid var(--danger);">
               <div style="font-size: 0.75rem; color: var(--text-muted);">Factor 1 (25 pts)</div>
@@ -368,14 +368,13 @@
                 <th>Credential (25)</th>
                 <th>Exposure (15)</th>
                 <th>Config (10)</th>
-                <th>Total Risk Score</th>
-                <th>Severity Tier</th>
+                <th>Risk Score & Severity</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="risk-table-body">
               <tr>
-                <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading risk assessments...</td>
+                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading risk assessments...</td>
               </tr>
             </tbody>
           </table>
@@ -461,6 +460,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <script src="/static/js/auth.js"></script>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=2"></script>
 </body>
 </html>

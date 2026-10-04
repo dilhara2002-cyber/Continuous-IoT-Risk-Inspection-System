@@ -23,6 +23,19 @@ class AlertManager:
             should_close = True
 
         cursor = conn.cursor()
+
+        # Duplicate Prevention
+        if device_id is not None:
+            existing = cursor.execute(
+                "SELECT id FROM alerts WHERE device_id = ? AND alert_type = ? AND is_resolved = 0",
+                (device_id, alert_type)
+            ).fetchone()
+            if existing:
+                if should_close:
+                    conn.close()
+                # existing is a sqlite3.Row, access by key
+                return existing["id"]
+
         cursor.execute(
             """
             INSERT INTO alerts (device_id, alert_type, severity, title, description, is_resolved)
@@ -31,9 +44,6 @@ class AlertManager:
             (device_id, alert_type, severity, title, description)
         )
         alert_id = cursor.lastrowid
-        if should_close:
-            conn.commit()
-            conn.close()
 
         # Simulated Email Notification (Chapter 11.4: optional administrator notification)
         if notify_email or severity == "High":
@@ -45,6 +55,10 @@ class AlertManager:
             description=f"Generated {severity.upper()} severity alert: {title}",
             conn=conn
         )
+        
+        if should_close:
+            conn.commit()
+            conn.close()
 
         return alert_id
 
