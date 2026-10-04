@@ -18,7 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (roleEl) {
       roleEl.innerText = currentUser.role.toUpperCase();
       if (currentUser.role === "viewer") {
-        roleEl.style.backgroundColor = "#64748b";
+        roleEl.style.backgroundColor = "#404040";
         // Disable admin-only scan buttons if viewer
         const execBtn = document.getElementById("exec-scan-btn");
         if (execBtn) {
@@ -222,8 +222,8 @@ async function loadDiscoveryTable() {
     devices.forEach(d => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td><code>${escapeHtml(d.ip_address)}</code></td>
-        <td><code>${escapeHtml(d.mac_address)}</code></td>
+        <td><span class="tech-val">${escapeHtml(d.ip_address)}</span></td>
+        <td><span class="tech-val">${escapeHtml(d.mac_address)}</span></td>
         <td><strong>${escapeHtml(d.hostname || "Unknown Host")}</strong></td>
         <td><span class="type-tag">ARP / mDNS Broadcast</span></td>
         <td><small>${escapeHtml(d.first_seen)}</small></td>
@@ -274,8 +274,8 @@ function renderDeviceInventory(devices) {
         <strong>${escapeHtml(d.hostname || "Unnamed Asset")}</strong>
         <div style="font-size: 0.75rem; color: var(--text-muted);">${d.is_known_device ? "✓ Approved Asset" : "⚠️ Rogue / Unregistered"}</div>
       </td>
-      <td><code>${escapeHtml(d.ip_address)}</code></td>
-      <td><code>${escapeHtml(d.mac_address)}</code></td>
+      <td><span class="tech-val">${escapeHtml(d.ip_address)}</span></td>
+      <td><span class="tech-val">${escapeHtml(d.mac_address)}</span></td>
       <td>${escapeHtml(d.manufacturer || "Unknown")}</td>
       <td><span class="type-tag">${getCategoryIcon(d.device_type)} ${escapeHtml(d.device_type)}</span></td>
       <td><small>${escapeHtml(d.firmware_version || "Unknown")}</small></td>
@@ -327,8 +327,8 @@ async function loadClassificationData() {
         allClassifiedDevices.forEach(d => {
           const tr = document.createElement("tr");
           tr.innerHTML = `
-            <td><strong>${escapeHtml(d.hostname || "Device")}</strong> (${escapeHtml(d.ip_address)})</td>
-            <td><code>${escapeHtml(d.oui_prefix)}</code> <span style="font-size: 0.75rem; color: var(--text-muted);">(${escapeHtml(d.mac_address)})</span></td>
+            <td><strong>${escapeHtml(d.hostname || "Device")}</strong> <span class="tech-val">(${escapeHtml(d.ip_address)})</span></td>
+            <td><span class="tech-val">${escapeHtml(d.oui_prefix)}</span> <span style="font-size: 0.75rem; color: var(--text-muted);"><span class="tech-val">(${escapeHtml(d.mac_address)})</span></span></td>
             <td><strong>${escapeHtml(d.manufacturer)}</strong></td>
             <td><small>${escapeHtml(d.rationale)}</small></td>
             <td><span class="type-tag">${getCategoryIcon(d.device_type)} ${escapeHtml(d.device_type)}</span></td>
@@ -351,7 +351,7 @@ async function loadClassificationData() {
         tr.innerHTML = `
           <td><span class="type-tag">${getCategoryIcon(r.category)} <strong>${escapeHtml(r.category)}</strong></span></td>
           <td><small>${r.oui_vendors.join(", ")}</small></td>
-          <td><code>${r.ports_services.join(", ")}</code></td>
+          <td><span class="tech-val">${r.ports_services.join(", ")}</span></td>
           <td><small>${r.hostname_patterns.join(", ")}</small></td>
           <td><small style="color: var(--text-muted);">${escapeHtml(r.description)}</small></td>
         `;
@@ -403,18 +403,21 @@ async function loadRiskAssessmentData() {
       tr.innerHTML = `
         <td>
           <strong>${escapeHtml(d.hostname || "Device")}</strong>
-          <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(d.ip_address)} | ${escapeHtml(d.device_type)}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);"><span class="tech-val">${escapeHtml(d.ip_address)}</span> | ${escapeHtml(d.device_type)}</div>
         </td>
         <td><strong style="color: ${risk.factor_unknown > 0 ? 'var(--danger)' : 'var(--success)'}">${risk.factor_unknown}</strong> / 25</td>
         <td><strong style="color: ${risk.factor_firmware > 15 ? 'var(--danger)' : (risk.factor_firmware > 0 ? 'var(--warning)' : 'var(--success)')}">${risk.factor_firmware}</strong> / 25</td>
         <td><strong style="color: ${risk.factor_credential > 0 ? 'var(--danger)' : 'var(--success)'}">${risk.factor_credential}</strong> / 25</td>
         <td><strong style="color: ${risk.factor_exposure > 8 ? 'var(--danger)' : (risk.factor_exposure > 0 ? 'var(--warning)' : 'var(--success)')}">${risk.factor_exposure}</strong> / 15</td>
         <td><strong style="color: ${risk.factor_config > 5 ? 'var(--danger)' : (risk.factor_config > 0 ? 'var(--warning)' : 'var(--success)')}">${risk.factor_config}</strong> / 10</td>
-        <td>
-          <div style="font-size: 1.1rem; font-weight: 700;">${risk.risk_score} <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted);">/ 100</span></div>
-        </td>
-        <td>
-          <span class="badge ${getRiskBadgeClass(risk.risk_level)}">${escapeHtml(risk.risk_level)}</span>
+        <td style="min-width: 150px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.35rem;">
+            <div style="font-size: 1.1rem; font-weight: 700;">${risk.risk_score} <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted);">/ 100</span></div>
+            <span class="badge ${getRiskBadgeClass(risk.risk_level)}">${escapeHtml(risk.risk_level)}</span>
+          </div>
+          <div class="progress-bar-bg" style="height: 6px; background-color: var(--bg-hover);">
+            <div class="progress-bar-fill" style="width: ${risk.risk_score}%; background-color: ${risk.risk_level === 'High' ? 'var(--danger)' : (risk.risk_level === 'Medium' ? 'var(--warning)' : 'var(--success)')};"></div>
+          </div>
         </td>
         <td>
           <button class="btn btn-secondary btn-sm" onclick="inspectDevice(${d.id})">📊 Explain Findings</button>
@@ -458,7 +461,7 @@ async function loadAlerts() {
       card.innerHTML = `
         <div class="alert-content">
           <h4>${escapeHtml(a.title)}</h4>
-          <p style="font-size: 0.9rem; color: #cbd5e1;">${escapeHtml(a.description)}</p>
+          <p style="font-size: 0.9rem; color: var(--text-muted);">${escapeHtml(a.description)}</p>
           <div class="alert-meta">
             Type: <strong>${escapeHtml(a.alert_type)}</strong> | 
             Severity: <span class="badge ${getRiskBadgeClass(a.severity)}">${a.severity}</span> | 
@@ -470,7 +473,7 @@ async function loadAlerts() {
         ${isAdmin ? `
           <div style="margin-left: 1rem;">
             <button class="btn btn-secondary btn-sm" onclick="toggleAlertResolution(${a.id}, ${!a.is_resolved})">
-              ${a.is_resolved ? 'Reopen' : '✓ Resolve'}
+              ${a.is_resolved ? '↻ Reopen Alert' : '✓ Resolve Alert'}
             </button>
           </div>
         ` : ''}
@@ -487,7 +490,9 @@ async function loadAlerts() {
 }
 
 async function toggleAlertResolution(alertId, newStatus) {
-  const confirmMsg = newStatus ? "Are you sure you want to resolve this security alert?" : "Are you sure you want to reopen this security alert?";
+  const confirmMsg = newStatus 
+    ? "Mark this alert as resolved? This closes the alert record but does not remove the underlying device risk." 
+    : "Reopen this alert for further investigation?";
   if (!confirm(confirmMsg)) return;
 
   try {
@@ -498,7 +503,7 @@ async function toggleAlertResolution(alertId, newStatus) {
     });
     if (!res.ok) throw new Error("Could not update alert status");
     loadAlerts();
-    showToast("Security alert status updated successfully.", "success");
+    showToast(newStatus ? "Security alert marked as resolved." : "Security alert reopened for investigation.", "success");
   } catch (err) {
     showToast(err.message || "Unable to resolve the security alert.", "error");
   }
@@ -544,11 +549,11 @@ async function loadAuditLogs() {
     logs.forEach(l => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td><small>${escapeHtml(l.timestamp)}</small></td>
-        <td><code>${escapeHtml(l.event_type)}</code></td>
+        <td><span style="color: var(--text-muted); font-size: 0.85rem;">${escapeHtml(l.timestamp)}</span></td>
+        <td><span class="type-tag" style="font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.5px;">${escapeHtml(l.event_type)}</span></td>
         <td><strong>${escapeHtml(l.username)}</strong></td>
         <td>${escapeHtml(l.description)}</td>
-        <td><small>${escapeHtml(l.ip_source)}</small></td>
+        <td><span class="tech-val">${escapeHtml(l.ip_source)}</span></td>
       `;
       tbody.appendChild(tr);
     });
@@ -595,7 +600,7 @@ async function inspectDevice(deviceId) {
         </div>
       </div>
 
-      <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: #fff;">Risk Factor Contribution Breakdown (Proposal Chapter 10)</h4>
+      <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: #fff;">Risk Factor Contribution Breakdown</h4>
       <div style="margin-bottom: 1.5rem;">
         <div class="factor-row">
           <div class="factor-header">
