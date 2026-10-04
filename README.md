@@ -21,14 +21,14 @@ The platform is structured as a continuous 4-stage pipeline matching the Project
 ```
 +---------------------+      +------------------------+      +-------------------------+      +---------------------------+
 | 1. Device Discovery | ---> | 2. Device Classification| ---> | 3. Risk Assessment       | ---> | 4. Admin Dashboard        |
-| (ARP/Socket/DHCP)   |      | (OUI & Heuristic Rules) |      | (5-Factor Model: 0-100) |      | (JWT, RBAC, Alerts, Audit)|
+| (Simulated Testbed) |      | (OUI & Heuristic Rules) |      | (5-Factor Model: 0-100) |      | (JWT, RBAC, Alerts, Audit)|
 +---------------------+      +------------------------+      +-------------------------+      +---------------------------+
 ```
 
 ### 1. Device Discovery Component (Chapters 3.4, 4.2.1, 6.5, 7.3)
-- Scans authorized network IP range and observes devices.
+- Simulates discovery of authorized smart office network devices using predefined testbed data.
 - Captures metadata: IP Address, MAC Address, Hostname, Open Ports, Observed Services, First-Seen and Last-Seen timestamps.
-- Features a Smart Office simulation mode for local viva evaluations and controlled demonstrations without requiring root/Npcap drivers.
+- Exclusively utilizes a Smart Office simulation mode to ensure a fully non-intrusive security assessment, avoiding real network sweeps or the need for root/Npcap drivers.
 
 ### 2. Device Classification Component (Chapters 3.5, 4.2.2, 6.6, 7.4)
 - Performs IEEE MAC OUI prefix lookup against vendor database (`oui_database.json`).
@@ -129,7 +129,7 @@ iot2/
 │   │   ├── auth.py               # bcrypt password hashing, JWT tokens & RBAC
 │   │   ├── modules/
 │   │   │   ├── __init__.py
-│   │   │   ├── discovery.py      # Device discovery pipeline (ARP/socket/office simulation)
+│   │   │   ├── discovery.py      # Device discovery pipeline (Office simulation testbed)
 │   │   │   ├── classification.py # IEEE OUI lookup & rule-based classifier
 │   │   │   ├── risk_assessment.py# 5-factor weighted risk engine (0-100)
 │   │   │   ├── alert_manager.py  # Security alert generation & notifications
