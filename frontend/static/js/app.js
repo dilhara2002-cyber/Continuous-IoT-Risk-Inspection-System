@@ -110,13 +110,18 @@ async function loadDashboardOverview() {
     loadDashboardRecentAlerts();
   } catch (err) {
     console.error("Dashboard overview error:", err);
+    const catList = document.getElementById("dash-category-list");
+    if (catList) catList.innerHTML = `<div style="color: var(--danger); font-size: 0.85rem;">Unable to load dashboard data. Please try again.</div>`;
   }
 }
 
 async function loadDashboardRecentAlerts() {
   try {
     const res = await fetch("/api/alerts?unresolved_only=true", { headers: getAuthHeaders() });
-    if (!res.ok) return;
+    if (!res.ok) {
+      if (res.status === 401) return logout();
+      throw new Error("Failed to load alerts");
+    }
     const alerts = await res.json();
     const container = document.getElementById("dash-recent-alerts");
     container.innerHTML = "";
@@ -138,7 +143,11 @@ async function loadDashboardRecentAlerts() {
       `;
       container.appendChild(item);
     });
-  } catch (e) {}
+  } catch (e) {
+    console.error("Dashboard alerts error:", e);
+    const container = document.getElementById("dash-recent-alerts");
+    if (container) container.innerHTML = `<div style="color: var(--danger); font-size: 0.85rem;">Unable to load recent alerts. Please try again.</div>`;
+  }
 }
 
 /* =========================================================================
@@ -197,7 +206,10 @@ async function quickScan() {
 async function loadDiscoveryTable() {
   try {
     const res = await fetch("/api/devices", { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error("Could not load devices");
+    if (!res.ok) {
+      if (res.status === 401) return logout();
+      throw new Error("Could not load devices");
+    }
     const devices = await res.json();
     const tbody = document.getElementById("discovery-table-body");
     tbody.innerHTML = "";
@@ -222,6 +234,8 @@ async function loadDiscoveryTable() {
     });
   } catch (err) {
     console.error("Discovery table error:", err);
+    const tbody = document.getElementById("discovery-table-body");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--danger); padding: 2rem;">Unable to load discovery data. Please try again.</td></tr>`;
   }
 }
 
@@ -231,11 +245,16 @@ async function loadDiscoveryTable() {
 async function loadDeviceInventory() {
   try {
     const res = await fetch("/api/devices", { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error("Could not load devices");
+    if (!res.ok) {
+      if (res.status === 401) return logout();
+      throw new Error("Could not load devices");
+    }
     allDevices = await res.json();
     renderDeviceInventory(allDevices);
   } catch (err) {
     console.error("Device inventory error:", err);
+    const tbody = document.getElementById("info-table-body");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--danger); padding: 2rem;">Unable to load device information. Please try again.</td></tr>`;
   }
 }
 
@@ -341,6 +360,8 @@ async function loadClassificationData() {
     }
   } catch (err) {
     console.error("Classification page error:", err);
+    const tbody = document.getElementById("classification-table-body");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger); padding: 2rem;">Unable to load classification data. Please try again.</td></tr>`;
   }
 }
 
@@ -350,7 +371,10 @@ async function loadClassificationData() {
 async function loadRiskAssessmentData() {
   try {
     const res = await fetch("/api/devices", { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error("Could not load devices for risk view");
+    if (!res.ok) {
+      if (res.status === 401) return logout();
+      throw new Error("Could not load devices for risk view");
+    }
     const devices = await res.json();
     const tbody = document.getElementById("risk-table-body");
     tbody.innerHTML = "";
@@ -400,6 +424,8 @@ async function loadRiskAssessmentData() {
     }
   } catch (err) {
     console.error("Risk assessment error:", err);
+    const tbody = document.getElementById("risk-table-body");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger); padding: 2rem;">Unable to load risk assessment data. Please try again.</td></tr>`;
   }
 }
 
@@ -410,7 +436,10 @@ async function loadAlerts() {
   const unresolvedOnly = document.getElementById("unresolved-alerts-check")?.checked || false;
   try {
     const res = await fetch(`/api/alerts?unresolved_only=${unresolvedOnly}`, { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error("Failed to load alerts");
+    if (!res.ok) {
+      if (res.status === 401) return logout();
+      throw new Error("Failed to load alerts");
+    }
     const alerts = await res.json();
     const container = document.getElementById("alerts-feed-container");
     container.innerHTML = "";
@@ -452,10 +481,15 @@ async function loadAlerts() {
     loadUnresolvedAlertBadge();
   } catch (err) {
     console.error("Alerts load error:", err);
+    const container = document.getElementById("alerts-feed-container");
+    if (container) container.innerHTML = `<div style="text-align: center; color: var(--danger); padding: 3rem;">Unable to load security alerts. Please try again.</div>`;
   }
 }
 
 async function toggleAlertResolution(alertId, newStatus) {
+  const confirmMsg = newStatus ? "Are you sure you want to resolve this security alert?" : "Are you sure you want to reopen this security alert?";
+  if (!confirm(confirmMsg)) return;
+
   try {
     const res = await fetch(`/api/alerts/${alertId}/resolve`, {
       method: "PUT",
@@ -464,8 +498,9 @@ async function toggleAlertResolution(alertId, newStatus) {
     });
     if (!res.ok) throw new Error("Could not update alert status");
     loadAlerts();
+    showToast("Security alert status updated successfully.", "success");
   } catch (err) {
-    alert(err.message);
+    showToast(err.message || "Unable to resolve the security alert.", "error");
   }
 }
 
@@ -493,7 +528,10 @@ async function loadUnresolvedAlertBadge() {
 async function loadAuditLogs() {
   try {
     const res = await fetch("/api/audit", { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error("Could not fetch audit records");
+    if (!res.ok) {
+      if (res.status === 401) return logout();
+      throw new Error("Could not fetch audit records");
+    }
     const logs = await res.json();
     const tbody = document.getElementById("audit-table-body");
     tbody.innerHTML = "";
@@ -516,6 +554,8 @@ async function loadAuditLogs() {
     });
   } catch (err) {
     console.error("Audit load error:", err);
+    const tbody = document.getElementById("audit-table-body");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--danger); padding: 2rem;">Unable to load audit history. Please try again.</td></tr>`;
   }
 }
 
@@ -632,7 +672,7 @@ async function inspectDevice(deviceId) {
     document.getElementById("modal-content").innerHTML = html;
     document.getElementById("detail-modal").classList.add("open");
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, "error");
   }
 }
 
@@ -650,12 +690,16 @@ async function recalculateRisk(deviceId) {
     inspectDevice(deviceId);
     loadRiskAssessmentData();
     loadDashboardOverview();
+    showToast("Risk recalculated successfully.", "success");
   } catch (err) {
-    alert(err.message);
+    showToast(err.message || "Unable to recalculate risk.", "error");
   }
 }
 
 async function toggleKnownDevice(deviceId, newStatus) {
+  const confirmMsg = newStatus ? "Are you sure you want to authorize this device as a known device?" : "Are you sure you want to mark this device as rogue?";
+  if (!confirm(confirmMsg)) return;
+
   try {
     const res = await fetch(`/api/devices/${deviceId}`, {
       method: "PUT",
@@ -670,14 +714,33 @@ async function toggleKnownDevice(deviceId, newStatus) {
     inspectDevice(deviceId);
     loadRiskAssessmentData();
     loadDashboardOverview();
+    showToast("Device status updated successfully.", "success");
   } catch (err) {
-    alert(err.message);
+    showToast(err.message || "Unable to update device status. Please try again.", "error");
   }
 }
 
 /* =========================================================================
    9. HELPER UTILITIES
    ========================================================================= */
+function showToast(message, type = "success") {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.innerText = message;
+  
+  container.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.classList.add("fade-out");
+    toast.addEventListener("animationend", () => {
+      toast.remove();
+    });
+  }, 4000);
+}
+
 function getRiskBadgeClass(level) {
   switch ((level || "").toLowerCase()) {
     case "high": return "badge-high";
