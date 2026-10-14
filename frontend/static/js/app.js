@@ -166,6 +166,9 @@ async function executeDiscoveryScan() {
   feedback.style.border = "1px solid rgba(59, 130, 246, 0.3)";
   feedback.style.color = "#93c5fd";
   feedback.innerHTML = `Initiating non-intrusive discovery on subnet <code>${subnet}</code> (Mode: ${scanMode})...`;
+  
+  const skippedSection = document.getElementById("skipped-hosts-section");
+  if (skippedSection) skippedSection.style.display = "none";
 
   try {
     const res = await fetch("/api/devices/scan", {
@@ -183,7 +186,29 @@ async function executeDiscoveryScan() {
     feedback.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
     feedback.style.border = "1px solid rgba(16, 185, 129, 0.3)";
     feedback.style.color = "#34d399";
-    feedback.innerHTML = `✓ ${result.message} (${result.devices_found} active devices identified, ${result.new_devices_added} new entries).`;
+    feedback.innerHTML = `✓ ${result.message} (${result.devices_found} active hosts identified).`;
+
+    if (result.skipped_hosts && result.skipped_hosts.length > 0) {
+      document.getElementById("scan-summary-active").innerText = `Active Hosts Detected: ${result.devices_found}`;
+      document.getElementById("scan-summary-imported").innerText = `Imported to Inventory: ${result.devices_found - result.skipped_hosts.length}`;
+      document.getElementById("scan-summary-skipped").innerText = `Not Imported: ${result.skipped_hosts.length}`;
+      
+      const tbody = document.getElementById("skipped-hosts-table-body");
+      if (tbody) {
+        tbody.innerHTML = "";
+        result.skipped_hosts.forEach(h => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><span class="tech-val">${escapeHtml(h.ip_address)}</span></td>
+            <td><span class="tech-val" style="color: var(--text-muted);">${escapeHtml(h.mac_address || "Unavailable")}</span></td>
+            <td><span class="badge badge-low" style="background-color: var(--warning); color: #000;">Not Imported</span></td>
+            <td><small>${escapeHtml(h.reason)}</small></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+      if (skippedSection) skippedSection.style.display = "block";
+    }
 
     loadDiscoveryTable();
     loadUnresolvedAlertBadge();
@@ -203,7 +228,50 @@ async function quickScan() {
   await executeDiscoveryScan();
 }
 
+let networkAutoDetected = false;
+
+async function autoDetectNetwork(force = false) {
+  if (networkAutoDetected && !force) return;
+  
+  const btn = document.querySelector("button[onclick='autoDetectNetwork(true)']");
+  const oldText = btn ? btn.innerText : "Auto Detect";
+  if (btn) btn.innerText = "⏳...";
+
+  try {
+    const res = await fetch("/api/devices/network-info", { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (res.ok && data.status === "success") {
+      const ifaceEl = document.getElementById("net-interface");
+      const ipEl = document.getElementById("net-ip");
+      const subnetEl = document.getElementById("net-subnet");
+      if (ifaceEl) ifaceEl.innerText = data.interface;
+      if (ipEl) ipEl.innerText = data.local_ip;
+      if (subnetEl) subnetEl.innerText = data.network_cidr;
+      
+      const subnetInput = document.getElementById("scan-subnet");
+      if (subnetInput) subnetInput.value = data.network_cidr;
+      
+      networkAutoDetected = true;
+      if (force) showToast("Network successfully auto-detected.", "success");
+    } else {
+      const ifaceEl = document.getElementById("net-interface");
+      const ipEl = document.getElementById("net-ip");
+      const subnetEl = document.getElementById("net-subnet");
+      if (ifaceEl) ifaceEl.innerText = "Unknown";
+      if (ipEl) ipEl.innerText = "Unknown";
+      if (subnetEl) subnetEl.innerText = "Unknown";
+      if (force) showToast(data.message || "Failed to auto-detect network.", "error");
+    }
+  } catch (err) {
+    console.error("Network detection error:", err);
+    if (force) showToast("Error connecting to network detection API.", "error");
+  } finally {
+    if (btn) btn.innerText = oldText;
+  }
+}
+
 async function loadDiscoveryTable() {
+  autoDetectNetwork(false);
   try {
     const res = await fetch("/api/devices", { headers: getAuthHeaders() });
     if (!res.ok) {
@@ -225,7 +293,7 @@ async function loadDiscoveryTable() {
         <td><span class="tech-val">${escapeHtml(d.ip_address)}</span></td>
         <td><span class="tech-val">${escapeHtml(d.mac_address)}</span></td>
         <td><strong>${escapeHtml(d.hostname || "Unknown Host")}</strong></td>
-        <td><span class="type-tag">ARP / mDNS Broadcast</span></td>
+        <td><span class="type-tag">${escapeHtml(d.detection_method || "Simulated Testbed")}</span></td>
         <td><small>${escapeHtml(d.first_seen)}</small></td>
         <td><small>${escapeHtml(d.last_seen)}</small></td>
         <td><span style="color: var(--success); font-size: 0.85rem;">● ${escapeHtml(d.status)}</span></td>
@@ -262,6 +330,11 @@ function renderDeviceInventory(devices) {
   const tbody = document.getElementById("info-table-body");
   tbody.innerHTML = "";
 
+  const currentUser = getCurrentUser();
+  const isAdmin = currentUser && currentUser.role === "admin";
+  const addBtn = document.getElementById("add-device-btn");
+  if (addBtn) addBtn.style.display = isAdmin ? "inline-flex" : "none";
+
   if (devices.length === 0) {
     tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">No devices match the filter criteria.</td></tr>`;
     return;
@@ -269,20 +342,48 @@ function renderDeviceInventory(devices) {
 
   devices.forEach(d => {
     const tr = document.createElement("tr");
+
+    let originBadgeClass = "badge-simulated";
+    const origin = d.detection_method || "Simulated Testbed";
+    if (origin === "Manually Registered") originBadgeClass = "badge-manual";
+    else if (origin === "Authorized Network Discovery") originBadgeClass = "badge-active";
+
+    let statusColor = "var(--text-muted)";
+    let statusIcon = "●";
+    if (d.status === "Online") {
+      statusColor = "var(--success)";
+      statusIcon = "●";
+    } else if (d.status === "Not Yet Observed") {
+      statusColor = "#60a5fa";
+      statusIcon = "◌";
+    }
+
+    let actionsHtml = `<button class="btn btn-secondary btn-sm" onclick="inspectDevice(${d.id})" title="Inspect risk factors">🔍 Inspect</button>`;
+    if (isAdmin) {
+      if (d.is_known_device) {
+        actionsHtml += ` <button class="btn btn-secondary btn-sm" style="color: var(--warning); padding: 0.35rem 0.6rem;" onclick="unauthorizeDevice(${d.id})" title="Mark as Unauthorized / Rogue">🚫 Revoke</button>`;
+      } else {
+        actionsHtml += ` <button class="btn btn-secondary btn-sm" style="color: var(--success); padding: 0.35rem 0.6rem;" onclick="authorizeDevice(${d.id})" title="Authorize Device">✓ Authorize</button>`;
+      }
+      actionsHtml += ` <button class="btn btn-secondary btn-sm" style="padding: 0.35rem 0.6rem;" onclick="openEditDeviceModal(${d.id})" title="Edit Device">✏️ Edit</button>`;
+    }
+
     tr.innerHTML = `
       <td>
         <strong>${escapeHtml(d.hostname || "Unnamed Asset")}</strong>
-        <div style="font-size: 0.75rem; color: var(--text-muted);">${d.is_known_device ? "✓ Approved Asset" : "⚠️ Rogue / Unregistered"}</div>
+        <div style="margin-top: 0.25rem;">
+          <span class="badge ${d.is_known_device ? 'badge-authorized' : 'badge-unauthorized'}" style="font-size: 0.7rem; padding: 0.15rem 0.45rem;">
+            ${d.is_known_device ? "✓ Approved Asset" : "⚠️ Pending Approval"}
+          </span>
+        </div>
       </td>
       <td><span class="tech-val">${escapeHtml(d.ip_address)}</span></td>
       <td><span class="tech-val">${escapeHtml(d.mac_address)}</span></td>
       <td>${escapeHtml(d.manufacturer || "Unknown")}</td>
       <td><span class="type-tag">${getCategoryIcon(d.device_type)} ${escapeHtml(d.device_type)}</span></td>
-      <td><small>${escapeHtml(d.firmware_version || "Unknown")}</small></td>
-      <td><span style="color: ${d.status === 'Online' ? 'var(--success)' : 'var(--text-muted)'}; font-size: 0.85rem;">● ${d.status}</span></td>
-      <td>
-        <button class="btn btn-secondary btn-sm" onclick="inspectDevice(${d.id})">🔍 Inspect</button>
-      </td>
+      <td><span class="badge ${originBadgeClass}" style="font-size: 0.75rem;">${escapeHtml(origin)}</span></td>
+      <td><span style="color: ${statusColor}; font-size: 0.85rem; font-weight: 500;">${statusIcon} ${escapeHtml(d.status)}</span></td>
+      <td style="white-space: nowrap;">${actionsHtml}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -298,7 +399,8 @@ function filterDeviceInventory() {
       (d.hostname || "").toLowerCase().includes(search) ||
       (d.ip_address || "").toLowerCase().includes(search) ||
       (d.mac_address || "").toLowerCase().includes(search) ||
-      (d.manufacturer || "").toLowerCase().includes(search);
+      (d.manufacturer || "").toLowerCase().includes(search) ||
+      (d.detection_method || "").toLowerCase().includes(search);
 
     const matchCat = !cat || d.device_type === cat;
     const matchStatus = !status || d.status === status;
@@ -653,6 +755,9 @@ async function inspectDevice(deviceId) {
 
       <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: #fff;">Hardware & Observed Network Metadata</h4>
       <div style="font-size: 0.85rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem;">
+        <div><strong>Device Origin:</strong> <span class="badge ${dev.detection_method === 'Manually Registered' ? 'badge-manual' : (dev.detection_method === 'Authorized Network Discovery' ? 'badge-active' : 'badge-simulated')}">${escapeHtml(dev.detection_method || "Simulated Testbed")}</span></div>
+        <div><strong>Authorization:</strong> <span class="badge ${dev.is_known_device ? 'badge-authorized' : 'badge-unauthorized'}">${dev.is_known_device ? "✓ Approved Asset" : "⚠️ Pending Approval"}</span></div>
+        <div><strong>Status:</strong> <span style="color: ${dev.status === 'Online' ? 'var(--success)' : (dev.status === 'Not Yet Observed' ? '#60a5fa' : 'var(--text-muted)')}; font-weight: 500;">${dev.status === 'Online' ? '●' : (dev.status === 'Not Yet Observed' ? '◌' : '●')} ${escapeHtml(dev.status)}</span></div>
         <div><strong>Firmware Version:</strong> ${escapeHtml(dev.firmware_version || "Unknown")}</div>
         <div><strong>Credential Status:</strong> ${escapeHtml(dev.credential_status || "Unknown")}</div>
         <div><strong>Open Ports:</strong> ${dev.open_ports && dev.open_ports.length > 0 ? dev.open_ports.join(", ") : "None Detected"}</div>
@@ -665,11 +770,13 @@ async function inspectDevice(deviceId) {
     const currentUser = getCurrentUser();
     if (currentUser && currentUser.role === "admin") {
       html += `
-        <div style="display: flex; gap: 0.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+        <div style="display: flex; gap: 0.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem; flex-wrap: wrap;">
           <button class="btn btn-secondary btn-sm" onclick="recalculateRisk(${dev.id})">🔄 Recalculate Risk</button>
-          <button class="btn btn-secondary btn-sm" onclick="toggleKnownDevice(${dev.id}, ${!dev.is_known_device})">
-            ${dev.is_known_device ? "Mark as Rogue/Unknown" : "Authorize as Known Device"}
-          </button>
+          ${dev.is_known_device ? 
+            `<button class="btn btn-secondary btn-sm" style="color: var(--warning);" onclick="unauthorizeDevice(${dev.id})">🚫 Mark as Unauthorized</button>` :
+            `<button class="btn btn-secondary btn-sm" style="color: var(--success);" onclick="authorizeDevice(${dev.id})">✓ Authorize Device</button>`
+          }
+          <button class="btn btn-secondary btn-sm" onclick="closeDetailModal(); openEditDeviceModal(${dev.id});">✏️ Edit Device</button>
         </div>
       `;
     }
@@ -701,27 +808,238 @@ async function recalculateRisk(deviceId) {
   }
 }
 
-async function toggleKnownDevice(deviceId, newStatus) {
-  const confirmMsg = newStatus ? "Are you sure you want to authorize this device as a known device?" : "Are you sure you want to mark this device as rogue?";
-  if (!confirm(confirmMsg)) return;
+/* =========================================================================
+   DEVICE REGISTRATION & AUTHORIZATION MANAGEMENT (ADMIN ONLY)
+   ========================================================================= */
+
+function openRegisterDeviceModal() {
+  const user = getCurrentUser();
+  if (!user || user.role !== "admin") {
+    showToast("Administrative privileges required to register devices.", "error");
+    return;
+  }
+  document.getElementById("reg-hostname").value = "";
+  document.getElementById("reg-ip").value = "";
+  document.getElementById("reg-mac").value = "";
+  document.getElementById("reg-mfg").value = "";
+  document.getElementById("reg-type").value = "CCTV Camera";
+  document.getElementById("reg-auth-status").value = "true";
+
+  const errEl = document.getElementById("register-error-msg");
+  if (errEl) {
+    errEl.style.display = "none";
+    errEl.innerText = "";
+  }
+  document.getElementById("register-device-modal").classList.add("open");
+}
+
+function closeRegisterDeviceModal() {
+  document.getElementById("register-device-modal").classList.remove("open");
+}
+
+async function submitRegisterDevice(e) {
+  e.preventDefault();
+  const errEl = document.getElementById("register-error-msg");
+  errEl.style.display = "none";
+
+  const hostname = document.getElementById("reg-hostname").value.trim();
+  const ip = document.getElementById("reg-ip").value.trim();
+  const mac = document.getElementById("reg-mac").value.trim();
+  const deviceType = document.getElementById("reg-type").value;
+  const manufacturer = document.getElementById("reg-mfg").value.trim();
+  const isKnown = document.getElementById("reg-auth-status").value === "true";
+
+  if (!ip) {
+    errEl.innerText = "IP address is required.";
+    errEl.style.display = "block";
+    return;
+  }
+  if (!mac) {
+    errEl.innerText = "MAC address is required.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  const btn = document.getElementById("reg-submit-btn");
+  btn.disabled = true;
+  btn.innerText = "Registering...";
+
+  try {
+    const res = await fetch("/api/devices", {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        hostname: hostname,
+        ip_address: ip,
+        mac_address: mac,
+        device_type: deviceType,
+        manufacturer: manufacturer || null,
+        is_known_device: isKnown
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Device registration failed.");
+    }
+
+    closeRegisterDeviceModal();
+    showToast(`✓ Device ${escapeHtml(data.device.hostname || data.device.ip_address)} registered successfully.`);
+    loadDeviceInventory();
+    loadDashboardOverview();
+    loadUnresolvedAlertBadge();
+  } catch (err) {
+    errEl.innerText = err.message || "Failed to register device.";
+    errEl.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "➕ Register Device";
+  }
+}
+
+function openEditDeviceModal(deviceId) {
+  const user = getCurrentUser();
+  if (!user || user.role !== "admin") {
+    showToast("Administrative privileges required to edit devices.", "error");
+    return;
+  }
+
+  const dev = allDevices.find(d => d.id === deviceId);
+  if (!dev) {
+    showToast("Device not found in active inventory.", "error");
+    return;
+  }
+
+  document.getElementById("edit-device-id").value = dev.id;
+  document.getElementById("edit-device-subtitle").innerText = `Asset #${dev.id} — ${dev.ip_address} (${dev.mac_address})`;
+  document.getElementById("edit-hostname").value = dev.hostname || "";
+  document.getElementById("edit-ip").value = dev.ip_address || "";
+  document.getElementById("edit-mac").value = dev.mac_address || "";
+  document.getElementById("edit-type").value = dev.device_type || "Unknown Device";
+  document.getElementById("edit-mfg").value = dev.manufacturer || "";
+  document.getElementById("edit-auth-status").value = dev.is_known_device ? "true" : "false";
+
+  const errEl = document.getElementById("edit-error-msg");
+  if (errEl) {
+    errEl.style.display = "none";
+    errEl.innerText = "";
+  }
+  document.getElementById("edit-device-modal").classList.add("open");
+}
+
+function closeEditDeviceModal() {
+  document.getElementById("edit-device-modal").classList.remove("open");
+}
+
+async function submitEditDevice(e) {
+  e.preventDefault();
+  const deviceId = document.getElementById("edit-device-id").value;
+  const errEl = document.getElementById("edit-error-msg");
+  errEl.style.display = "none";
+
+  const hostname = document.getElementById("edit-hostname").value.trim();
+  const ip = document.getElementById("edit-ip").value.trim();
+  const deviceType = document.getElementById("edit-type").value;
+  const manufacturer = document.getElementById("edit-mfg").value.trim();
+  const isKnown = document.getElementById("edit-auth-status").value === "true";
+
+  const btn = document.getElementById("edit-submit-btn");
+  btn.disabled = true;
+  btn.innerText = "Saving...";
 
   try {
     const res = await fetch(`/api/devices/${deviceId}`, {
       method: "PUT",
       headers: getAuthHeaders(),
-      body: JSON.stringify({ is_known_device: newStatus })
+      body: JSON.stringify({
+        hostname: hostname,
+        ip_address: ip,
+        device_type: deviceType,
+        manufacturer: manufacturer,
+        is_known_device: isKnown
+      })
     });
-    if (!res.ok) throw new Error("Update failed");
-    await fetch(`/api/risk/evaluate/${deviceId}`, {
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Device update failed.");
+    }
+
+    closeEditDeviceModal();
+    showToast("✓ Device metadata and authorization updated.");
+    loadDeviceInventory();
+    loadDashboardOverview();
+    loadUnresolvedAlertBadge();
+    const detailModal = document.getElementById("detail-modal");
+    if (detailModal && detailModal.classList.contains("open")) {
+      inspectDevice(parseInt(deviceId));
+    }
+  } catch (err) {
+    errEl.innerText = err.message || "Failed to update device.";
+    errEl.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "💾 Save Changes";
+  }
+}
+
+async function authorizeDevice(deviceId) {
+  const user = getCurrentUser();
+  if (!user || user.role !== "admin") {
+    showToast("Administrative privileges required to authorize devices.", "error");
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/devices/${deviceId}/authorize`, {
       method: "POST",
       headers: getAuthHeaders()
     });
-    inspectDevice(deviceId);
-    loadRiskAssessmentData();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Authorization failed.");
+
+    showToast(data.message || "Device successfully authorized.");
+    loadDeviceInventory();
     loadDashboardOverview();
-    showToast("Device status updated successfully.", "success");
+    loadUnresolvedAlertBadge();
+    const detailModal = document.getElementById("detail-modal");
+    if (detailModal && detailModal.classList.contains("open")) {
+      inspectDevice(deviceId);
+    }
   } catch (err) {
-    showToast(err.message || "Unable to update device status. Please try again.", "error");
+    showToast(err.message || "Unable to authorize device.", "error");
+  }
+}
+
+async function unauthorizeDevice(deviceId) {
+  const user = getCurrentUser();
+  if (!user || user.role !== "admin") {
+    showToast("Administrative privileges required to revoke authorization.", "error");
+    return;
+  }
+
+  if (!confirm("Are you sure you want to mark this device as unauthorized / rogue? A security alert will be raised.")) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/devices/${deviceId}/unauthorize`, {
+      method: "POST",
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Action failed.");
+
+    showToast(data.message || "Device marked as unauthorized.");
+    loadDeviceInventory();
+    loadDashboardOverview();
+    loadUnresolvedAlertBadge();
+    const detailModal = document.getElementById("detail-modal");
+    if (detailModal && detailModal.classList.contains("open")) {
+      inspectDevice(deviceId);
+    }
+  } catch (err) {
+    showToast(err.message || "Unable to update device authorization.", "error");
   }
 }
 

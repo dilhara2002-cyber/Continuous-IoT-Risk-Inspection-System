@@ -35,16 +35,27 @@ class DeviceBase(BaseModel):
     is_known_device: Optional[bool] = False
     status: Optional[str] = "Online"
 
+class DeviceCreate(BaseModel):
+    ip_address: str
+    mac_address: str
+    hostname: Optional[str] = ""
+    manufacturer: Optional[str] = None
+    device_type: Optional[str] = "Unknown Device"
+    is_known_device: Optional[bool] = False
+
 class DeviceResponse(DeviceBase):
     id: int
     first_seen: Optional[str] = None
     last_seen: Optional[str] = None
     latest_risk_score: Optional[int] = None
     latest_risk_level: Optional[str] = None
+    detection_method: Optional[str] = "Simulated Testbed"
 
 class DeviceUpdate(BaseModel):
     hostname: Optional[str] = None
+    ip_address: Optional[str] = None
     device_type: Optional[str] = None
+    manufacturer: Optional[str] = None
     is_known_device: Optional[bool] = None
 
 # Risk Assessment Models
@@ -98,3 +109,4 @@ class ScanResponse(BaseModel):
     devices_found: int
     new_devices_added: int
     message: str
+    skipped_hosts: Optional[List[dict]] = None
