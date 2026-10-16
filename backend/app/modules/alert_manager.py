@@ -26,14 +26,37 @@ class AlertManager:
 
         # Duplicate Prevention
         if device_id is not None:
-            existing = cursor.execute(
-                "SELECT id FROM alerts WHERE device_id = ? AND alert_type = ? AND is_resolved = 0",
-                (device_id, alert_type)
-            ).fetchone()
+            auth_alert_types = {
+                "Unknown Device",
+                "Unauthorized Device",
+                "Unrecognized Device Type",
+                "Unauthorized & Unrecognized Device"
+            }
+            if alert_type in auth_alert_types:
+                existing = cursor.execute(
+                    """
+                    SELECT id FROM alerts 
+                    WHERE device_id = ? 
+                      AND alert_type IN ('Unknown Device', 'Unauthorized Device', 'Unrecognized Device Type', 'Unauthorized & Unrecognized Device') 
+                      AND is_resolved = 0
+                    """,
+                    (device_id,)
+                ).fetchone()
+            else:
+                existing = cursor.execute(
+                    "SELECT id FROM alerts WHERE device_id = ? AND alert_type = ? AND is_resolved = 0",
+                    (device_id, alert_type)
+                ).fetchone()
+
             if existing:
+                # Update existing active alert to keep alert details accurate without creating duplicate
+                cursor.execute(
+                    "UPDATE alerts SET alert_type = ?, title = ?, description = ?, severity = ? WHERE id = ?",
+                    (alert_type, title, description, severity, existing["id"])
+                )
                 if should_close:
+                    conn.commit()
                     conn.close()
-                # existing is a sqlite3.Row, access by key
                 return existing["id"]
 
         cursor.execute(
@@ -74,14 +97,45 @@ class AlertManager:
         risk_level = risk_result.get("risk_level", "Low")
         risk_score = risk_result.get("risk_score", 0)
 
-        # Rule 1: Unknown / Unmanaged Device Alert (Shadow IoT)
-        if not device_data.get("is_known_device") or device_data.get("device_type") == "Unknown Device":
+        # Rule 1: Device Authorization & Device Type Identification Alerts (Shadow IoT / Unmanaged Assets)
+        is_authorized = bool(device_data.get("is_known_device", False))
+        device_type = device_data.get("device_type") or "Unknown Device"
+        is_unrecognized = (device_type == "Unknown Device")
+        mfg = device_data.get("manufacturer") or "Unknown Manufacturer"
+        ip = device_data.get("ip_address", "Unknown IP")
+        mac = device_data.get("mac_address", "Unknown MAC")
+
+        if not is_authorized and not is_unrecognized:
+            # Trigger: Device is not authorized, but successfully classified
+            mfg_str = f" ({mfg})" if mfg and mfg.lower() not in ["unknown", "unknown manufacturer", "n/a"] else ""
             AlertManager.create_alert(
                 device_id=device_id,
-                alert_type="Unknown Device",
+                alert_type="Unauthorized Device",
                 severity="High",
-                title=f"Rogue / Unknown Device Detected: {hostname}",
-                description=f"Device at IP {device_data.get('ip_address')} ({device_data.get('mac_address')}) is unauthorized or unknown.",
+                title=f"Unauthorized Device Detected: {hostname}",
+                description=f"Device at IP {ip} ({mac}) is classified as '{device_type}'{mfg_str} but is not an authorized asset. Administrative authorization required.",
+                notify_email=True,
+                conn=conn
+            )
+        elif is_authorized and is_unrecognized:
+            # Trigger: Device is authorized, but device category is Unknown Device
+            AlertManager.create_alert(
+                device_id=device_id,
+                alert_type="Unrecognized Device Type",
+                severity="High",
+                title=f"Unrecognized Device Type: {hostname}",
+                description=f"Device at IP {ip} ({mac}) is an authorized asset, but its category could not be determined by heuristic classification rules. Manual category assignment or protocol inspection recommended.",
+                notify_email=True,
+                conn=conn
+            )
+        elif not is_authorized and is_unrecognized:
+            # Trigger: Both conditions apply (unauthorized and unrecognized device category)
+            AlertManager.create_alert(
+                device_id=device_id,
+                alert_type="Unauthorized & Unrecognized Device",
+                severity="High",
+                title=f"Rogue / Unrecognized Device Detected: {hostname}",
+                description=f"Device at IP {ip} ({mac}) is unauthorized and its device type is unrecognized (both conditions apply). Administrative approval and device classification required.",
                 notify_email=True,
                 conn=conn
             )

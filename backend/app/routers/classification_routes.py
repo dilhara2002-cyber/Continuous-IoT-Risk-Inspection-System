@@ -84,28 +84,73 @@ def get_classified_devices(current_user: dict = Depends(get_current_user)):
         open_ports = json.loads(d["open_ports"]) if d["open_ports"] else []
         services = json.loads(d["services"]) if d["services"] else []
         hostname = d["hostname"] or ""
-        manufacturer = d["manufacturer"] or "Unknown"
+        manufacturer = d["manufacturer"] or "Unknown Manufacturer"
         device_type = d["device_type"] or "Unknown Device"
 
-        # Determine explanation of why this rule was chosen
-        rationale = []
-        if oui_prefix in classifier.oui_db:
-            rationale.append(f"OUI prefix '{oui_prefix}' matches {manufacturer}")
-        else:
-            rationale.append(f"OUI prefix '{oui_prefix}' not in IEEE vendor list")
+        # Determine manufacturer identification and source
+        oui_vendor = classifier.oui_db.get(oui_prefix)
+        is_unknown_mfg = (not manufacturer or 
+                          manufacturer.strip().lower() in ["unknown", "unknown manufacturer", "unregistered", "n/a"])
 
-        if 554 in open_ports or 37777 in open_ports:
+        if oui_vendor:
+            # Verified against IEEE OUI database
+            mfg_display = manufacturer if not is_unknown_mfg else oui_vendor
+            mfg_source = "IEEE OUI Registry"
+            mfg_rationale = f"OUI prefix '{oui_prefix}' matches {oui_vendor} (IEEE OUI verified)"
+            has_oui_match = True
+        elif not is_unknown_mfg:
+            # Manufacturer present from stored device/discovery metadata, but OUI is not in IEEE DB
+            mfg_display = manufacturer
+            mfg_source = "Stored Device Metadata"
+            mfg_rationale = f"Vendor '{manufacturer}' identified from stored device metadata (OUI '{oui_prefix}' not in IEEE OUI database)"
+            has_oui_match = False
+        else:
+            # Unresolved OUI
+            mfg_display = "Unknown Manufacturer"
+            mfg_source = "Unresolved OUI"
+            mfg_rationale = f"OUI prefix '{oui_prefix}' not in IEEE vendor list"
+            has_oui_match = False
+
+        rationale = [mfg_rationale]
+        hostname_lower = hostname.lower()
+        services_str = " ".join(str(s) for s in services).lower()
+        has_port_match = False
+
+        # Characteristic Port / Service checks
+        if 554 in open_ports or 37777 in open_ports or "rtsp" in services_str:
             rationale.append("RTSP / Surveillance port active")
-        if 9100 in open_ports or 631 in open_ports:
+            has_port_match = True
+        if 9100 in open_ports or 631 in open_ports or 515 in open_ports or "ipp" in services_str or "jetdirect" in services_str:
             rationale.append("JetDirect/IPP printing port active")
-        if 9999 in open_ports:
+            has_port_match = True
+        if 9999 in open_ports or "kasa" in services_str:
             rationale.append("Port 9999 (Smart Home protocol)")
-        if 1883 in open_ports or "sensor" in hostname.lower():
+            has_port_match = True
+        if 1883 in open_ports or "mqtt" in services_str:
+            rationale.append("MQTT telemetry port active")
+            has_port_match = True
+
+        # Hostname pattern checks
+        if any(h in hostname_lower for h in ["cam", "dvr", "nvr"]):
+            rationale.append("Video surveillance hostname signature")
+        if any(h in hostname_lower for h in ["printer", "print", "mfp"]):
+            rationale.append("Printer hostname signature")
+        if any(h in hostname_lower for h in ["lock", "door", "badge"]):
+            rationale.append("Physical access lock hostname signature")
+        if any(h in hostname_lower for h in ["sensor", "temp", "hvac", "humidity"]):
             rationale.append("Sensor telemetry signature")
-        if any(h in hostname.lower() for h in ["ap-", "switch", "router"]):
+        if any(h in hostname_lower for h in ["plug", "kasa"]):
+            rationale.append("Smart plug hostname signature")
+        if any(h in hostname_lower for h in ["ap-", "switch", "router"]):
             rationale.append("Network infrastructure hostname match")
 
-        confidence = "High (OUI + Port Match)" if len(rationale) >= 2 else ("Moderate (Rule Match)" if device_type != "Unknown Device" else "Low (Unrecognized)")
+        # Confidence calculation based on genuine evidence
+        if has_oui_match and has_port_match:
+            confidence = "High (OUI + Port Match)"
+        elif device_type != "Unknown Device":
+            confidence = "Moderate (Rule Match)"
+        else:
+            confidence = "Low (Unrecognized)"
 
         results.append({
             "id": d["id"],
@@ -113,7 +158,8 @@ def get_classified_devices(current_user: dict = Depends(get_current_user)):
             "ip_address": d["ip_address"],
             "mac_address": mac,
             "oui_prefix": oui_prefix,
-            "manufacturer": manufacturer,
+            "manufacturer": mfg_display,
+            "manufacturer_source": mfg_source,
             "device_type": device_type,
             "open_ports": open_ports,
             "services": services,
