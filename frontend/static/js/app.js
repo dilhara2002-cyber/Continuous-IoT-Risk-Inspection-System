@@ -19,14 +19,61 @@ document.addEventListener("DOMContentLoaded", () => {
       roleEl.innerText = currentUser.role.toUpperCase();
       if (currentUser.role === "viewer") {
         roleEl.style.backgroundColor = "#404040";
-        // Disable admin-only scan buttons if viewer
-        const execBtn = document.getElementById("exec-scan-btn");
-        if (execBtn) {
-          execBtn.disabled = true;
-          execBtn.title = "Admin role required to trigger discovery scan";
-        }
       }
     }
+
+    const isViewer = currentUser.role === "viewer";
+    const isAdmin = currentUser.role === "admin";
+
+    // Quick Discovery Scan button: hide and disable for viewer
+    const quickScanBtn = document.getElementById("quick-scan-btn");
+    if (quickScanBtn) {
+      if (isViewer) {
+        quickScanBtn.style.display = "none";
+        quickScanBtn.disabled = true;
+        quickScanBtn.title = "Admin role required to trigger discovery scan";
+      } else {
+        quickScanBtn.style.display = "flex";
+        quickScanBtn.disabled = false;
+        quickScanBtn.title = "";
+      }
+    }
+
+    // Main scan execution button: disable for viewer
+    const execBtn = document.getElementById("exec-scan-btn");
+    if (execBtn) {
+      if (isViewer) {
+        execBtn.disabled = true;
+        execBtn.title = "Admin role required to trigger discovery scan";
+      } else {
+        execBtn.disabled = false;
+        execBtn.title = "";
+      }
+    }
+
+    // Set Add Device button visibility based on role
+    const addBtn = document.getElementById("add-device-btn");
+    if (addBtn) {
+      addBtn.style.display = isAdmin ? "inline-flex" : "none";
+    }
+  }
+
+  // Bind Add Device button click listener defensively
+  const addDeviceBtn = document.getElementById("add-device-btn");
+  if (addDeviceBtn) {
+    addDeviceBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      openRegisterDeviceModal();
+    });
+  }
+
+  // Synchronize sidebar scan target with scan-subnet input
+  const scanSubnetInput = document.getElementById("scan-subnet");
+  if (scanSubnetInput) {
+    scanSubnetInput.addEventListener("input", (e) => {
+      const sidebarTarget = document.getElementById("sidebar-target-subnet");
+      if (sidebarTarget) sidebarTarget.innerText = e.target.value.trim() || "192.168.1.0/24";
+    });
   }
 
   // Set up navigation tab listeners
@@ -154,6 +201,12 @@ async function loadDashboardRecentAlerts() {
    2. DEVICE DISCOVERY PAGE
    ========================================================================= */
 async function executeDiscoveryScan() {
+  const currentUser = getCurrentUser();
+  if (!currentUser || currentUser.role !== "admin") {
+    showToast("Administrative privileges required to run discovery scans.", "error");
+    return;
+  }
+
   const btn = document.getElementById("exec-scan-btn");
   const feedback = document.getElementById("scan-feedback");
   const subnet = document.getElementById("scan-subnet").value.trim() || "192.168.1.0/24";
@@ -224,6 +277,11 @@ async function executeDiscoveryScan() {
 }
 
 async function quickScan() {
+  const currentUser = getCurrentUser();
+  if (!currentUser || currentUser.role !== "admin") {
+    showToast("Administrative privileges required to run discovery scans.", "error");
+    return;
+  }
   navigateTo("discovery-view");
   await executeDiscoveryScan();
 }
@@ -250,6 +308,9 @@ async function autoDetectNetwork(force = false) {
       
       const subnetInput = document.getElementById("scan-subnet");
       if (subnetInput) subnetInput.value = data.network_cidr;
+      
+      const sidebarTarget = document.getElementById("sidebar-target-subnet");
+      if (sidebarTarget) sidebarTarget.innerText = data.network_cidr;
       
       networkAutoDetected = true;
       if (force) showToast("Network successfully auto-detected.", "success");
@@ -345,7 +406,7 @@ function renderDeviceInventory(devices) {
 
     let originBadgeClass = "badge-simulated";
     const origin = d.detection_method || "Simulated Testbed";
-    if (origin === "Manually Registered") originBadgeClass = "badge-manual";
+    if (origin === "Manual Entry" || origin === "Manually Registered") originBadgeClass = "badge-manual";
     else if (origin === "Authorized Network Discovery") originBadgeClass = "badge-active";
 
     let statusColor = "var(--text-muted)";
@@ -361,7 +422,7 @@ function renderDeviceInventory(devices) {
     let actionsHtml = `<button class="btn btn-secondary btn-sm" onclick="inspectDevice(${d.id})" title="Inspect risk factors">🔍 Inspect</button>`;
     if (isAdmin) {
       if (d.is_known_device) {
-        actionsHtml += ` <button class="btn btn-secondary btn-sm" style="color: var(--warning); padding: 0.35rem 0.6rem;" onclick="unauthorizeDevice(${d.id})" title="Mark as Unauthorized / Rogue">🚫 Revoke</button>`;
+        actionsHtml += ` <button class="btn btn-secondary btn-sm" style="color: var(--warning); padding: 0.35rem 0.6rem;" onclick="unauthorizeDevice(${d.id})" title="Revoke Approval (Mark as Unauthorized)">🚫 Revoke</button>`;
       } else {
         actionsHtml += ` <button class="btn btn-secondary btn-sm" style="color: var(--success); padding: 0.35rem 0.6rem;" onclick="authorizeDevice(${d.id})" title="Authorize Device">✓ Authorize</button>`;
       }
@@ -431,7 +492,16 @@ async function loadClassificationData() {
           tr.innerHTML = `
             <td><strong>${escapeHtml(d.hostname || "Device")}</strong> <span class="tech-val">(${escapeHtml(d.ip_address)})</span></td>
             <td><span class="tech-val">${escapeHtml(d.oui_prefix)}</span> <span style="font-size: 0.75rem; color: var(--text-muted);"><span class="tech-val">(${escapeHtml(d.mac_address)})</span></span></td>
-            <td><strong>${escapeHtml(d.manufacturer)}</strong></td>
+            <td>
+              <strong>${escapeHtml(d.manufacturer)}</strong>
+              ${d.manufacturer_source === 'IEEE OUI Registry' 
+                ? `<div style="font-size: 0.72rem; color: #10b981; margin-top: 0.2rem;"><i class="fas fa-check-circle"></i> IEEE OUI Verified</div>`
+                : (d.manufacturer_source === 'Stored Device Metadata'
+                    ? `<div style="font-size: 0.72rem; color: #f59e0b; margin-top: 0.2rem;"><i class="fas fa-database"></i> Stored Metadata</div>`
+                    : `<div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;"><i class="fas fa-question-circle"></i> Unresolved OUI</div>`
+                  )
+              }
+            </td>
             <td><small>${escapeHtml(d.rationale)}</small></td>
             <td><span class="type-tag">${getCategoryIcon(d.device_type)} ${escapeHtml(d.device_type)}</span></td>
             <td><span class="badge ${d.confidence.includes('High') ? 'badge-low' : (d.confidence.includes('Moderate') ? 'badge-medium' : 'badge-high')}">${escapeHtml(d.confidence)}</span></td>
@@ -592,6 +662,12 @@ async function loadAlerts() {
 }
 
 async function toggleAlertResolution(alertId, newStatus) {
+  const user = getCurrentUser();
+  if (!user || user.role !== "admin") {
+    showToast("Administrative privileges required to resolve alerts.", "error");
+    return;
+  }
+
   const confirmMsg = newStatus 
     ? "Mark this alert as resolved? This closes the alert record but does not remove the underlying device risk." 
     : "Reopen this alert for further investigation?";
@@ -755,7 +831,7 @@ async function inspectDevice(deviceId) {
 
       <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: #fff;">Hardware & Observed Network Metadata</h4>
       <div style="font-size: 0.85rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem;">
-        <div><strong>Device Origin:</strong> <span class="badge ${dev.detection_method === 'Manually Registered' ? 'badge-manual' : (dev.detection_method === 'Authorized Network Discovery' ? 'badge-active' : 'badge-simulated')}">${escapeHtml(dev.detection_method || "Simulated Testbed")}</span></div>
+        <div><strong>Device Origin:</strong> <span class="badge ${dev.detection_method === 'Manual Entry' || dev.detection_method === 'Manually Registered' ? 'badge-manual' : (dev.detection_method === 'Authorized Network Discovery' ? 'badge-active' : 'badge-simulated')}">${escapeHtml(dev.detection_method || "Simulated Testbed")}</span></div>
         <div><strong>Authorization:</strong> <span class="badge ${dev.is_known_device ? 'badge-authorized' : 'badge-unauthorized'}">${dev.is_known_device ? "✓ Approved Asset" : "⚠️ Pending Approval"}</span></div>
         <div><strong>Status:</strong> <span style="color: ${dev.status === 'Online' ? 'var(--success)' : (dev.status === 'Not Yet Observed' ? '#60a5fa' : 'var(--text-muted)')}; font-weight: 500;">${dev.status === 'Online' ? '●' : (dev.status === 'Not Yet Observed' ? '◌' : '●')} ${escapeHtml(dev.status)}</span></div>
         <div><strong>Firmware Version:</strong> ${escapeHtml(dev.firmware_version || "Unknown")}</div>
@@ -793,6 +869,12 @@ function closeDetailModal() {
 }
 
 async function recalculateRisk(deviceId) {
+  const user = getCurrentUser();
+  if (!user || user.role !== "admin") {
+    showToast("Administrative privileges required to recalculate risk.", "error");
+    return;
+  }
+
   try {
     const res = await fetch(`/api/risk/evaluate/${deviceId}`, {
       method: "POST",
@@ -815,54 +897,126 @@ async function recalculateRisk(deviceId) {
 function openRegisterDeviceModal() {
   const user = getCurrentUser();
   if (!user || user.role !== "admin") {
-    showToast("Administrative privileges required to register devices.", "error");
+    showToast("Administrative privileges required to add devices.", "error");
     return;
   }
-  document.getElementById("reg-hostname").value = "";
-  document.getElementById("reg-ip").value = "";
-  document.getElementById("reg-mac").value = "";
-  document.getElementById("reg-mfg").value = "";
-  document.getElementById("reg-type").value = "CCTV Camera";
-  document.getElementById("reg-auth-status").value = "true";
+  const hostnameInput = document.getElementById("reg-hostname");
+  const ipInput = document.getElementById("reg-ip");
+  const macInput = document.getElementById("reg-mac");
+  const mfgInput = document.getElementById("reg-mfg");
+  const typeInput = document.getElementById("reg-type");
+
+  if (hostnameInput) hostnameInput.value = "";
+  if (ipInput) ipInput.value = "";
+  if (macInput) macInput.value = "";
+  if (mfgInput) mfgInput.value = "";
+  if (typeInput) typeInput.value = "CCTV Camera";
 
   const errEl = document.getElementById("register-error-msg");
   if (errEl) {
     errEl.style.display = "none";
     errEl.innerText = "";
   }
-  document.getElementById("register-device-modal").classList.add("open");
+  const modal = document.getElementById("register-device-modal");
+  if (modal) modal.classList.add("open");
 }
 
 function closeRegisterDeviceModal() {
-  document.getElementById("register-device-modal").classList.remove("open");
+  const modal = document.getElementById("register-device-modal");
+  if (modal) modal.classList.remove("open");
 }
 
 async function submitRegisterDevice(e) {
   e.preventDefault();
-  const errEl = document.getElementById("register-error-msg");
-  errEl.style.display = "none";
-
-  const hostname = document.getElementById("reg-hostname").value.trim();
-  const ip = document.getElementById("reg-ip").value.trim();
-  const mac = document.getElementById("reg-mac").value.trim();
-  const deviceType = document.getElementById("reg-type").value;
-  const manufacturer = document.getElementById("reg-mfg").value.trim();
-  const isKnown = document.getElementById("reg-auth-status").value === "true";
-
-  if (!ip) {
-    errEl.innerText = "IP address is required.";
-    errEl.style.display = "block";
+  const user = getCurrentUser();
+  if (!user || user.role !== "admin") {
+    showToast("Administrative privileges required to add devices.", "error");
     return;
   }
+
+  const errEl = document.getElementById("register-error-msg");
+  if (errEl) {
+    errEl.style.display = "none";
+    errEl.innerText = "";
+  }
+
+  const hostname = (document.getElementById("reg-hostname")?.value || "").trim();
+  const ip = (document.getElementById("reg-ip")?.value || "").trim();
+  const mac = (document.getElementById("reg-mac")?.value || "").trim();
+  const deviceType = document.getElementById("reg-type")?.value || "Unknown Device";
+  const manufacturer = (document.getElementById("reg-mfg")?.value || "").trim();
+
+  // 1. IP Address Validation
+  if (!ip) {
+    const msg = "IP address is required.";
+    if (errEl) { errEl.innerText = msg; errEl.style.display = "block"; }
+    showToast(msg, "error");
+    return;
+  }
+  const ipv4Regex = /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+  if (!ipv4Regex.test(ip)) {
+    const msg = `Invalid IPv4 address format: '${ip}'. Expected standard IPv4 (e.g. 192.168.1.150).`;
+    if (errEl) { errEl.innerText = msg; errEl.style.display = "block"; }
+    showToast(msg, "error");
+    return;
+  }
+
+  // 2. MAC Address Validation
   if (!mac) {
-    errEl.innerText = "MAC address is required.";
-    errEl.style.display = "block";
+    const msg = "MAC address is required.";
+    if (errEl) { errEl.innerText = msg; errEl.style.display = "block"; }
+    showToast(msg, "error");
+    return;
+  }
+  const cleanMac = mac.toUpperCase().replace(/-/g, ":");
+  const macRegex = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
+  if (!macRegex.test(cleanMac)) {
+    const msg = `Invalid MAC address format: '${mac}'. Expected 6-byte hexadecimal format (e.g. 00:11:22:33:44:55).`;
+    if (errEl) { errEl.innerText = msg; errEl.style.display = "block"; }
+    showToast(msg, "error");
+    return;
+  }
+  const macOctets = cleanMac.split(":");
+  if (macOctets.every(o => o === "00")) {
+    const msg = "All-zero MAC address (00:00:00:00:00:00) is not permitted.";
+    if (errEl) { errEl.innerText = msg; errEl.style.display = "block"; }
+    showToast(msg, "error");
+    return;
+  }
+  if (macOctets.every(o => o === "FF")) {
+    const msg = "Broadcast MAC address (FF:FF:FF:FF:FF:FF) is not permitted.";
+    if (errEl) { errEl.innerText = msg; errEl.style.display = "block"; }
+    showToast(msg, "error");
+    return;
+  }
+  if (parseInt(macOctets[0], 16) & 1) {
+    const msg = `Multicast MAC address ('${cleanMac}') is not permitted for device registration.`;
+    if (errEl) { errEl.innerText = msg; errEl.style.display = "block"; }
+    showToast(msg, "error");
+    return;
+  }
+
+  // 3. Client-side duplicate prevention check against loaded inventory
+  const dupMac = allDevices.find(d => (d.mac_address || "").toUpperCase() === cleanMac);
+  if (dupMac) {
+    const msg = `A device with MAC address '${cleanMac}' is already registered (Device #${dupMac.id} - ${dupMac.hostname || 'Unnamed'} at ${dupMac.ip_address}).`;
+    if (errEl) { errEl.innerText = msg; errEl.style.display = "block"; }
+    showToast(msg, "error");
+    return;
+  }
+  const dupIp = allDevices.find(d => d.ip_address === ip);
+  if (dupIp) {
+    const msg = `A device with IP address '${ip}' is already registered (Device #${dupIp.id} - ${dupIp.hostname || 'Unnamed'} with MAC ${dupIp.mac_address}).`;
+    if (errEl) { errEl.innerText = msg; errEl.style.display = "block"; }
+    showToast(msg, "error");
     return;
   }
 
   const btn = document.getElementById("reg-submit-btn");
-  btn.disabled = true;
-  btn.innerText = "Registering...";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "Adding Device...";
+  }
 
   try {
     const res = await fetch("/api/devices", {
@@ -871,29 +1025,35 @@ async function submitRegisterDevice(e) {
       body: JSON.stringify({
         hostname: hostname,
         ip_address: ip,
-        mac_address: mac,
+        mac_address: cleanMac,
         device_type: deviceType,
         manufacturer: manufacturer || null,
-        is_known_device: isKnown
+        is_known_device: false
       })
     });
 
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.detail || "Device registration failed.");
+      throw new Error(data.detail || "Device addition failed.");
     }
 
     closeRegisterDeviceModal();
-    showToast(`✓ Device ${escapeHtml(data.device.hostname || data.device.ip_address)} registered successfully.`);
+    showToast(`✓ Device '${escapeHtml(data.device.hostname || data.device.ip_address)}' added successfully.`, "success");
     loadDeviceInventory();
     loadDashboardOverview();
     loadUnresolvedAlertBadge();
   } catch (err) {
-    errEl.innerText = err.message || "Failed to register device.";
-    errEl.style.display = "block";
+    const errorMsg = err.message || "Failed to add device.";
+    if (errEl) {
+      errEl.innerText = errorMsg;
+      errEl.style.display = "block";
+    }
+    showToast(errorMsg, "error");
   } finally {
-    btn.disabled = false;
-    btn.innerText = "➕ Register Device";
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "➕ Add Device";
+    }
   }
 }
 
@@ -933,6 +1093,12 @@ function closeEditDeviceModal() {
 
 async function submitEditDevice(e) {
   e.preventDefault();
+  const user = getCurrentUser();
+  if (!user || user.role !== "admin") {
+    showToast("Administrative privileges required to edit devices.", "error");
+    return;
+  }
+
   const deviceId = document.getElementById("edit-device-id").value;
   const errEl = document.getElementById("edit-error-msg");
   errEl.style.display = "none";
@@ -1088,3 +1254,18 @@ function escapeHtml(str) {
   if (!str) return "";
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+
+// Global modal dismiss listeners (Escape key & backdrop click)
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeRegisterDeviceModal();
+    closeEditDeviceModal();
+    closeDetailModal();
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains("modal-backdrop") && e.target.classList.contains("open")) {
+    e.target.classList.remove("open");
+  }
+});

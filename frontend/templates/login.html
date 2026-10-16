@@ -69,13 +69,13 @@
         <div class="preset-login-hint" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color); font-size: 0.8rem; color: var(--text-muted);">
           <p style="margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Authorized Personnel Only</p>
           <div style="display: grid; gap: 0.5rem;">
-            <div style="display: flex; justify-content: space-between;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>Administrator</span>
-              <code style="font-family: var(--font-mono); color: var(--primary);">admin</code>
+              <code onclick="quickFill('admin', 'AdminPassword123!')" style="font-family: var(--font-mono); color: var(--primary); cursor: pointer; text-decoration: underline;" title="Click to fill credentials">admin</code>
             </div>
-            <div style="display: flex; justify-content: space-between;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>Viewer</span>
-              <code style="font-family: var(--font-mono); color: var(--primary);">viewer</code>
+              <code onclick="quickFill('viewer', 'ViewerPassword123!')" style="font-family: var(--font-mono); color: var(--primary); cursor: pointer; text-decoration: underline;" title="Click to fill credentials">viewer</code>
             </div>
           </div>
         </div>
@@ -87,6 +87,11 @@
   <script>
     // Redirect if already authenticated
     checkAuth(false);
+
+    function quickFill(user, pass) {
+      document.getElementById("username").value = user;
+      document.getElementById("password").value = pass;
+    }
 
     document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();

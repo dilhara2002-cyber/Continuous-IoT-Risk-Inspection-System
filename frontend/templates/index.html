@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Secure IoT Device Discovery & Risk Management System</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2">
+  <link rel="stylesheet" href="/static/css/style.css?v=10">
 </head>
 <body>
   <!-- Header (Chapter 11.2) -->
@@ -53,10 +53,11 @@
       </div>
 
       <div class="sidebar-bottom">
-        <div style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-bottom: 0.5rem;">
-          Active Network: <code>192.168.1.0/24</code>
+        <div style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-bottom: 0.5rem;" id="sidebar-network-scope">
+          Selected Scan Target: <code id="sidebar-target-subnet">192.168.1.0/24</code>
+          <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">Scope: All Discovered Devices</div>
         </div>
-        <button class="btn" style="width: 100%; justify-content: center;" onclick="quickScan()">
+        <button id="quick-scan-btn" class="btn" style="width: 100%; justify-content: center;" onclick="quickScan()">
           ⚡ Quick Discovery Scan
         </button>
       </div>
@@ -208,8 +209,8 @@
 
         <!-- Discovered Assets Table -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-          <h3 style="font-size: 1.1rem;">Discovered Network Inventory</h3>
-          <span style="font-size: 0.85rem; color: var(--text-muted);">Auto-updating from discovery pipeline</span>
+          <h3 style="font-size: 1.1rem;">All Discovered Devices Inventory</h3>
+          <span style="font-size: 0.85rem; color: var(--text-muted);">Cumulative records from all authorized scans</span>
         </div>
 
         <div class="table-container">
@@ -241,11 +242,11 @@
         <div class="page-title-row">
           <div>
             <h2 class="page-title">Device Information</h2>
-            <p style="color: var(--text-muted); font-size: 0.9rem;">Comprehensive inventory, network interfaces, open services, and firmware details</p>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">All Discovered Devices &mdash; Comprehensive inventory across all monitored network segments</p>
           </div>
           <div style="display: flex; gap: 0.75rem; align-items: center;">
             <button id="add-device-btn" class="btn btn-primary" onclick="openRegisterDeviceModal()" style="display: none;">
-              ➕ Add New Device
+              ➕ Add Device
             </button>
             <button class="btn btn-secondary btn-sm" onclick="loadDeviceInventory()">🔄 Refresh List</button>
           </div>
@@ -303,7 +304,7 @@
         <div class="page-title-row">
           <div>
             <h2 class="page-title">Device Classification</h2>
-            <p style="color: var(--text-muted); font-size: 0.9rem;">OUI manufacturer resolution and rule-based heuristic categorization</p>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">All Discovered Devices &mdash; OUI manufacturer resolution and rule-based heuristic categorization</p>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="loadClassificationData()">🔄 Refresh Classification</button>
         </div>
@@ -312,9 +313,9 @@
         <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem; font-size: 0.85rem; line-height: 1.6;">
           <strong>Two-Stage Classification Workflow:</strong>
           <br>
-          1. <strong>Stage 1 (Manufacturer Identification):</strong> Extracts first 3 octets (MAC OUI) and queries against the IEEE Vendor database.
+          1. <strong>Stage 1 (Manufacturer Identification):</strong> Extracts first 3 octets (MAC OUI) and queries against the IEEE Vendor database. If unlisted in the local IEEE registry, vendor data originating from stored device metadata (network scan / testbed) is distinguished and explicitly labeled.
           <br>
-          2. <strong>Stage 2 (Heuristic Inference):</strong> Inspects open port profiles (e.g. RTSP 554, JetDirect 9100) and service banners to infer the device category or fallback to <em>Unknown Device</em>.
+          2. <strong>Stage 2 (Heuristic Inference):</strong> Inspects open port profiles (e.g. RTSP 554, JetDirect 9100), service banners, and hostname signatures to infer the device category or fallback to <em>Unknown Device</em>.
         </div>
 
         <div class="table-container" style="margin-bottom: 2rem;">
@@ -364,7 +365,7 @@
         <div class="page-title-row">
           <div>
             <h2 class="page-title">Security Risk Assessment</h2>
-            <p style="color: var(--text-muted); font-size: 0.9rem;">Multi-factor weighted security evaluation (0–100 score)</p>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">All Discovered Devices &mdash; Multi-factor weighted security evaluation (0–100 score)</p>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="loadRiskAssessmentData()">🔄 Refresh Assessment</button>
         </div>
@@ -432,7 +433,7 @@
         <div class="page-title-row">
           <div>
             <h2 class="page-title">Security Alerts</h2>
-            <p style="color: var(--text-muted); font-size: 0.9rem;">Automated notifications for rogue devices, high-risk scores, and credential weaknesses</p>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Automated notifications for unauthorized devices, unrecognized device types, high-risk scores, and credential weaknesses</p>
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
             <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); cursor: pointer;">
@@ -498,14 +499,16 @@
         <!-- Injected dynamic content -->
       </div>
     </div>
+  </div>
+
   <!-- Device Manual Registration Modal (Admin Only) -->
   <div id="register-device-modal" class="modal-backdrop">
     <div class="modal-box" style="max-width: 580px;">
       <div class="modal-header">
         <div>
-          <h3 style="font-size: 1.3rem; color: #fff;">Register New Device</h3>
+          <h3 style="font-size: 1.3rem; color: #fff;">Add Device</h3>
           <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
-            Manually enroll an authorized asset into inventory
+            Manually enroll an IoT asset into network inventory
           </div>
         </div>
         <button class="close-btn" onclick="closeRegisterDeviceModal()">&times;</button>
@@ -513,7 +516,7 @@
 
       <form id="register-device-form" onsubmit="submitRegisterDevice(event)">
         <div style="background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius); padding: 0.75rem 1rem; margin-bottom: 1.25rem; font-size: 0.85rem; color: #93c5fd;">
-          ℹ️ <strong>Truthful Provenance:</strong> Manually registered assets are tagged as <code>Manually Registered</code> with initial status <code>Not Yet Observed</code> until verified on the live network.
+          ℹ️ <strong>Truthful Provenance:</strong> Manually added assets are labeled with detection method <code>Manual Entry</code>, initial status <code>Not Yet Observed</code>, and <code>Pending Approval</code> to preserve the security authorization workflow.
         </div>
 
         <div id="register-error-msg" style="display: none; background-color: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; border-radius: var(--radius); padding: 0.75rem; margin-bottom: 1.25rem; font-size: 0.85rem;"></div>
@@ -551,24 +554,13 @@
 
           <div class="form-group">
             <label class="form-label" for="reg-mfg">Manufacturer (optional)</label>
-            <input type="text" id="reg-mfg" class="form-input" placeholder="Auto-resolved via OUI if blank">
+            <input type="text" id="reg-mfg" class="form-input" placeholder="Auto-resolved via IEEE OUI if blank">
           </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="reg-auth-status">Authorization Status</label>
-          <select id="reg-auth-status" class="filter-select" style="width: 100%; padding: 0.75rem 1rem;">
-            <option value="true">✓ Authorized (Approved Asset)</option>
-            <option value="false">⚠️ Pending Approval (Unregistered / Quarantine)</option>
-          </select>
-          <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 0.25rem;">
-            Authorized devices incur zero unknown-device penalty in risk calculation.
-          </small>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
           <button type="button" class="btn btn-secondary" onclick="closeRegisterDeviceModal()">Cancel</button>
-          <button type="submit" id="reg-submit-btn" class="btn btn-primary">➕ Register Device</button>
+          <button type="submit" id="reg-submit-btn" class="btn btn-primary">➕ Add Device</button>
         </div>
       </form>
     </div>
@@ -649,6 +641,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <script src="/static/js/auth.js"></script>
-  <script src="/static/js/app.js?v=6"></script>
+  <script src="/static/js/app.js?v=10"></script>
 </body>
 </html>

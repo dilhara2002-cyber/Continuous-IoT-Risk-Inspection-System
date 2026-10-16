@@ -47,17 +47,17 @@ def validate_mac(mac_str: str) -> str:
 def get_device_origin(device_id: int, status: str = "", ip_address: str = "", mac_address: str = "") -> str:
     """
     Truthfully identifies device origin:
-    - 'Manually Registered'
+    - 'Manual Entry'
     - 'Authorized Network Discovery'
     - 'Simulated Testbed'
     """
     cached = discovery_service.method_cache.get(device_id)
     if cached == "manual":
-        return "Manually Registered"
+        return "Manual Entry"
 
     if status == "Not Yet Observed":
         discovery_service.method_cache[device_id] = "manual"
-        return "Manually Registered"
+        return "Manual Entry"
 
     try:
         conn = get_db_connection()
@@ -79,7 +79,7 @@ def get_device_origin(device_id: int, status: str = "", ip_address: str = "", ma
 
         if log and log["event_type"] == "DEVICE_REGISTERED":
             discovery_service.method_cache[device_id] = "manual"
-            return "Manually Registered"
+            return "Manual Entry"
         if log and log["event_type"] == "DEVICE_DISCOVERED":
             discovery_service.method_cache[device_id] = "active"
             return "Authorized Network Discovery"
@@ -318,18 +318,29 @@ def get_device_detail(device_id: int, current_user: dict = Depends(get_current_u
 def register_device(payload: DeviceCreate, current_user: dict = Depends(require_admin)):
     """
     Manually registers a device into inventory (Admin only).
-    Truthfully records status as 'Not Yet Observed' until verified by network discovery.
+    Truthfully records status as 'Not Yet Observed' and preserves the Known/Unknown approval workflow.
     """
     valid_ip = validate_ip(payload.ip_address)
     valid_mac = validate_mac(payload.mac_address)
 
     conn = get_db_connection()
-    existing = conn.execute("SELECT id, ip_address, hostname FROM devices WHERE mac_address = ?", (valid_mac,)).fetchone()
-    if existing:
+
+    # Prevent duplicate MAC address
+    existing_mac = conn.execute("SELECT id, ip_address, hostname FROM devices WHERE mac_address = ?", (valid_mac,)).fetchone()
+    if existing_mac:
         conn.close()
         raise HTTPException(
             status_code=400,
-            detail=f"A device with MAC address '{valid_mac}' is already registered (Device #{existing['id']} - {existing['hostname'] or 'Unnamed'} at {existing['ip_address']})."
+            detail=f"A device with MAC address '{valid_mac}' is already registered (Device #{existing_mac['id']} - {existing_mac['hostname'] or 'Unnamed'} at {existing_mac['ip_address']})."
+        )
+
+    # Prevent duplicate IP address
+    existing_ip = conn.execute("SELECT id, mac_address, hostname FROM devices WHERE ip_address = ?", (valid_ip,)).fetchone()
+    if existing_ip:
+        conn.close()
+        raise HTTPException(
+            status_code=400,
+            detail=f"A device with IP address '{valid_ip}' is already registered (Device #{existing_ip['id']} - {existing_ip['hostname'] or 'Unnamed'} with MAC {existing_ip['mac_address']})."
         )
 
     # Resolve manufacturer if omitted or unknown
@@ -340,7 +351,9 @@ def register_device(payload: DeviceCreate, current_user: dict = Depends(require_
 
     hostname = payload.hostname.strip() if payload.hostname and payload.hostname.strip() else f"manual-{valid_mac.replace(':', '')[-4:].lower()}"
     device_type = payload.device_type.strip() if payload.device_type and payload.device_type.strip() else "Unknown Device"
-    is_known = 1 if payload.is_known_device else 0
+
+    # Do not automatically mark manually added devices as authorized; preserve approval workflow
+    is_known = 0
     status = "Not Yet Observed"
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -381,6 +394,7 @@ def register_device(payload: DeviceCreate, current_user: dict = Depends(require_
         "status": status
     }
 
+    # Integrate with Risk Assessment Engine
     risk_result = risk_engine.evaluate_device(dev_data)
     cursor.execute(
         """
@@ -403,14 +417,26 @@ def register_device(payload: DeviceCreate, current_user: dict = Depends(require_
         )
     )
 
-    if not is_known:
-        alert_mgr.evaluate_and_alert(device_id, dev_data, risk_result, conn=conn)
+    # Integrate with Alert Pipeline (raises Rogue / Unknown Device alert)
+    alert_mgr.evaluate_and_alert(device_id, dev_data, risk_result, conn=conn)
 
-    auth_label = "Authorized Asset" if is_known else "Pending Approval"
+    # Record in Audit History
     audit_logger.log_event(
         event_type="DEVICE_REGISTERED",
         username=current_user["username"],
-        description=f"Manually registered device #{device_id} at {valid_ip} ({valid_mac}) - {hostname} [{auth_label}, Vendor: {manufacturer}, Category: {device_type}]",
+        description=f"Manually registered device #{device_id} at {valid_ip} ({valid_mac}) - {hostname} [Pending Approval, Vendor: {manufacturer}, Category: {device_type}]",
+        conn=conn
+    )
+    audit_logger.log_event(
+        event_type="DEVICE_CLASSIFIED",
+        username=current_user["username"],
+        description=f"Device {valid_ip} classified as {device_type} (Vendor: {manufacturer})",
+        conn=conn
+    )
+    audit_logger.log_event(
+        event_type="RISK_ASSESSED",
+        username=current_user["username"],
+        description=f"Initial risk assessment completed for {valid_ip} (Score: {risk_result['risk_score']})",
         conn=conn
     )
     conn.commit()
@@ -426,9 +452,9 @@ def register_device(payload: DeviceCreate, current_user: dict = Depends(require_
             "hostname": hostname,
             "manufacturer": manufacturer,
             "device_type": device_type,
-            "is_known_device": bool(is_known),
+            "is_known_device": False,
             "status": status,
-            "detection_method": "Manually Registered",
+            "detection_method": "Manual Entry",
             "latest_risk_score": risk_result["risk_score"],
             "latest_risk_level": risk_result["risk_level"]
         }
