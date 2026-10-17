@@ -1,9 +1,9 @@
 import json
 import socket
-import json
-from datetime import datetime
+import ipaddress
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional
-from backend.app.config import SEED_DEVICES_PATH
+from backend.app.config import SEED_DEVICES_PATH, OFFLINE_MISSED_SCANS_THRESHOLD, OFFLINE_TIMEOUT_SECONDS
 from backend.app.database import get_db_connection
 from backend.app.modules.classification import classifier
 from backend.app.modules.risk_assessment import risk_engine
@@ -20,6 +20,9 @@ class DeviceDiscoveryService:
 
     def __init__(self):
         self.method_cache = {}
+        self.consecutive_misses: Dict[int, int] = {}
+        self.missed_scans_threshold: int = OFFLINE_MISSED_SCANS_THRESHOLD
+        self.offline_timeout_seconds: int = OFFLINE_TIMEOUT_SECONDS
 
     def run_discovery_pipeline(self, scan_type: str = "simulated", target_subnet: str = "192.168.1.0/24", user: str = "SYSTEM") -> Dict[str, Any]:
         """Runs an end-to-end discovery cycle as described in Fig. 1 & 2."""
@@ -36,6 +39,10 @@ class DeviceDiscoveryService:
 
         devices_processed = 0
         new_devices_count = 0
+        devices_marked_offline = 0
+        devices_reconnected = 0
+        detected_device_ids = set()
+        detected_macs = set()
 
         for dev in raw_devices:
             ip = dev.get("ip_address")
@@ -67,9 +74,34 @@ class DeviceDiscoveryService:
 
             if existing:
                 device_id = existing["id"]
+                detected_device_ids.add(device_id)
+                detected_macs.add(mac)
+                prev_status = existing["status"]
+
                 # Retain approved / known status from the persistent database
                 dev["is_known_device"] = bool(existing["is_known_device"])
-                # Update last seen timestamp & potential IP changes
+                # Reset consecutive miss counter on detection
+                self.consecutive_misses[device_id] = 0
+
+                # Check if device reconnected from Offline or first observed after Not Yet Observed
+                if prev_status == "Offline":
+                    devices_reconnected += 1
+                    audit_logger.log_event(
+                        event_type="DEVICE_ONLINE",
+                        username=user,
+                        description=f"Device #{device_id} at {ip} ({mac}) reconnected and is back Online",
+                        conn=conn
+                    )
+                elif prev_status == "Not Yet Observed":
+                    devices_reconnected += 1
+                    audit_logger.log_event(
+                        event_type="DEVICE_ONLINE",
+                        username=user,
+                        description=f"Manually registered device #{device_id} at {ip} ({mac}) observed on network and is now Online",
+                        conn=conn
+                    )
+
+                # Update last seen timestamp & potential IP changes, setting status to Online
                 cursor.execute(
                     """
                     UPDATE devices SET 
@@ -102,8 +134,8 @@ class DeviceDiscoveryService:
                         ip_address, mac_address, hostname, manufacturer,
                         device_type, open_ports, services, firmware_version,
                         credential_status, network_exposure, security_configuration,
-                        is_known_device, status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Online')
+                        is_known_device, status, last_seen
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Online', CURRENT_TIMESTAMP)
                     """,
                     (
                         ip, mac, hostname, manufacturer,
@@ -116,6 +148,9 @@ class DeviceDiscoveryService:
                     )
                 )
                 device_id = cursor.lastrowid
+                detected_device_ids.add(device_id)
+                detected_macs.add(mac)
+                self.consecutive_misses[device_id] = 0
 
                 audit_logger.log_event(
                     event_type="DEVICE_DISCOVERED",
@@ -172,14 +207,88 @@ class DeviceDiscoveryService:
 
             devices_processed += 1
 
+        # Step 4.5: Device Availability Verification (Online/Offline Tracking)
+        # Verify status of existing inventory devices within the scanned network.
+        # Only evaluate devices whose IP address is covered by target_subnet.
+        try:
+            scanned_network = ipaddress.ip_network(target_subnet.strip(), strict=False)
+        except Exception:
+            scanned_network = None
+
+        if scanned_network:
+            existing_inventory = cursor.execute(
+                "SELECT id, ip_address, mac_address, hostname, status, last_seen FROM devices"
+            ).fetchall()
+
+            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+
+            for d in existing_inventory:
+                d_id = d["id"]
+                d_ip_str = d["ip_address"]
+                d_mac = d["mac_address"]
+                d_status = d["status"]
+                d_last_seen = d["last_seen"]
+
+                # 1. Skip if detected in the current scan
+                if d_id in detected_device_ids or d_mac in detected_macs:
+                    continue
+
+                # 2. Check if device IP is covered by the scanned network
+                try:
+                    d_ip = ipaddress.ip_address(d_ip_str)
+                    if d_ip not in scanned_network:
+                        continue
+                except Exception:
+                    continue
+
+                # 3. Preserve 'Not Yet Observed' state for manually added devices awaiting first discovery
+                if d_status == "Not Yet Observed":
+                    continue
+
+                # 4. If already Offline, maintain count and avoid duplicate logs
+                if d_status == "Offline":
+                    self.consecutive_misses[d_id] = self.consecutive_misses.get(d_id, self.missed_scans_threshold) + 1
+                    continue
+
+                # 5. Device was Online, but missing from this scan covering its network:
+                miss_count = self.consecutive_misses.get(d_id, 0) + 1
+                self.consecutive_misses[d_id] = miss_count
+
+                # Calculate elapsed seconds since last_seen
+                elapsed_seconds = 0.0
+                if d_last_seen:
+                    try:
+                        ls_clean = str(d_last_seen).split(".")[0]
+                        last_seen_dt = datetime.strptime(ls_clean, "%Y-%m-%d %H:%M:%S")
+                        elapsed_seconds = max(0.0, (now_utc - last_seen_dt).total_seconds())
+                    except Exception:
+                        elapsed_seconds = 0.0
+
+                # Confirmation criteria: repeated observations OR configurable timeout
+                if miss_count >= self.missed_scans_threshold or elapsed_seconds >= self.offline_timeout_seconds:
+                    cursor.execute("UPDATE devices SET status = 'Offline' WHERE id = ?", (d_id,))
+                    devices_marked_offline += 1
+                    audit_logger.log_event(
+                        event_type="DEVICE_OFFLINE",
+                        username=user,
+                        description=(
+                            f"Device #{d_id} at {d_ip_str} ({d_mac}) confirmed absent "
+                            f"after {miss_count} missed scan(s) (unobserved for {int(elapsed_seconds)}s) "
+                            f"and marked Offline"
+                        ),
+                        conn=conn
+                    )
+
         conn.commit()
         conn.close()
 
         # Step 5: Security Audit Log (Module 5)
-        # We can pass conn if we haven't closed it yet, but here we already committed and closed it!
-        # Wait, discovery.py lines 167: conn.close(). Let's let it create a new connection here by not passing it.
         desc_prefix = "Executed simulated network discovery test scan." if scan_type == "simulated" else "Executed authorized network discovery."
         msg_suffix = f" Processed {devices_processed} devices ({new_devices_count} newly identified)."
+        if devices_marked_offline > 0:
+            msg_suffix += f" {devices_marked_offline} device(s) confirmed absent and marked Offline."
+        if devices_reconnected > 0:
+            msg_suffix += f" {devices_reconnected} device(s) reconnected to Online."
         
         audit_logger.log_event(
             event_type="DISCOVERY_SCAN",
@@ -188,21 +297,31 @@ class DeviceDiscoveryService:
         )
 
         if scan_type == "active":
-            unverified_mac_count = sum(1 for h in skipped_hosts if "Local scanning host" not in h.get("reason", ""))
-            excluded_local_count = sum(1 for h in skipped_hosts if "Local scanning host" in h.get("reason", ""))
+            unverified_mac_count = sum(1 for h in skipped_hosts if "Local scanning" not in h.get("reason", ""))
+            excluded_local_count = sum(1 for h in skipped_hosts if "Local scanning" in h.get("reason", ""))
             details = [f"{devices_processed} imported"]
+            if devices_marked_offline > 0:
+                details.append(f"{devices_marked_offline} marked offline")
+            if devices_reconnected > 0:
+                details.append(f"{devices_reconnected} reconnected")
             if excluded_local_count > 0:
                 details.append(f"{excluded_local_count} scanning host excluded")
             if unverified_mac_count > 0:
                 details.append(f"{unverified_mac_count} skipped (unverified MAC)")
             message = f"Authorized discovery detected {devices_processed + len(skipped_hosts)} active hosts ({', '.join(details)})."
         else:
-            message = f"Successfully completed simulated network discovery test scan. {devices_processed} devices active in inventory."
+            sim_details = [f"{devices_processed} devices active in inventory"]
+            if devices_marked_offline > 0:
+                sim_details.append(f"{devices_marked_offline} marked offline")
+            message = f"Successfully completed simulated network discovery test scan. {', '.join(sim_details)}."
 
         return {
             "status": "success",
             "devices_found": devices_processed + len(skipped_hosts) if scan_type == "active" else devices_processed,
+            "devices_imported": devices_processed,
+            "devices_skipped": len(skipped_hosts) if scan_type == "active" else 0,
             "new_devices_added": new_devices_count,
+            "devices_marked_offline": devices_marked_offline,
             "message": message,
             "skipped_hosts": skipped_hosts if scan_type == "active" else None
         }
@@ -235,12 +354,22 @@ class DeviceDiscoveryService:
                 raise
             raise ValueError(f"Invalid target subnet: {subnet}")
 
-        # Detect local machine IP (Nmap never reports MAC for the scanning host)
+        # Detect local machine IP and all local interface addresses (Nmap never reports MAC for scanning host)
         local_ip = None
+        local_ips = set()
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("8.8.8.8", 80))
                 local_ip = s.getsockname()[0]
+                local_ips.add(local_ip)
+        except Exception:
+            pass
+
+        try:
+            hname = socket.gethostname()
+            for ip_cand in socket.gethostbyname_ex(hname)[2]:
+                if not ip_cand.startswith("127."):
+                    local_ips.add(ip_cand)
         except Exception:
             pass
 
@@ -256,11 +385,13 @@ class DeviceDiscoveryService:
             import os
             is_admin = os.geteuid() == 0
 
-        # Stage 1: Host discovery — Use ARP ping by default for local subnets
+        # Stage 1: Host discovery with bounded rate and retries for Wi-Fi reliability
         # On Windows, Npcap enables standard users to perform ARP pings without Administrator elevation.
-        # Do not force --unprivileged, as it strips MAC addresses from Nmap XML.
+        # Adding --max-rate prevents Wi-Fi AP broadcast packet drops, and --max-retries handles sleeping devices.
         cmd_stage1 = [
-            "nmap", "-sn", "-PR",
+            "nmap", "-sn",
+            "--max-rate", "150",
+            "--max-retries", "2",
             "-oX", "-",
             str(network)
         ]
@@ -327,12 +458,12 @@ class DeviceDiscoveryService:
 
                 discovered_ips.add(ip_addr)
 
-                # Skip the local machine — Nmap never reports its own MAC
-                if ip_addr == local_ip:
+                # Skip the local scanning computer — scanning host is excluded from IoT inventory
+                if ip_addr in local_ips or (local_ip and ip_addr == local_ip):
                     skipped_hosts_list.append({
                         "ip_address": ip_addr,
-                        "mac_address": None,
-                        "reason": "Local scanning host (own IP excluded from import)"
+                        "mac_address": mac_addr,
+                        "reason": "Local scanning computer (own IP excluded from inventory import)"
                     })
                     continue
 
@@ -353,7 +484,7 @@ class DeviceDiscoveryService:
                     skipped_hosts_list.append({
                         "ip_address": ip_addr,
                         "mac_address": None,
-                        "reason": "MAC address could not be reliably determined"
+                        "reason": "MAC address unavailable (hardware MAC required for database registration)"
                     })
         except ET.ParseError:
             raise ValueError("Failed to parse Stage 1 Nmap output.")
@@ -364,11 +495,11 @@ class DeviceDiscoveryService:
             for n_ip, n_mac in active_neighbors.items():
                 if n_ip not in discovered_ips and ipaddress.ip_address(n_ip) in network:
                     discovered_ips.add(n_ip)
-                    if n_ip == local_ip:
+                    if n_ip in local_ips or (local_ip and n_ip == local_ip):
                         skipped_hosts_list.append({
                             "ip_address": n_ip,
-                            "mac_address": None,
-                            "reason": "Local scanning host (own IP excluded from import)"
+                            "mac_address": n_mac,
+                            "reason": "Local scanning computer (own IP excluded from inventory import)"
                         })
                         continue
                     if n_mac:
@@ -383,7 +514,7 @@ class DeviceDiscoveryService:
                         skipped_hosts_list.append({
                             "ip_address": n_ip,
                             "mac_address": None,
-                            "reason": "MAC address could not be reliably determined"
+                            "reason": "MAC address unavailable (hardware MAC required for database registration)"
                         })
         except Exception:
             pass
@@ -569,9 +700,11 @@ class DeviceDiscoveryService:
                 import socket
                 import struct
                 p_send_arp = ctypes.windll.iphlpapi.SendARP
+                p_send_arp.argtypes = [ctypes.c_ulong, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_void_p]
+                p_send_arp.restype = ctypes.c_ulong
                 mac_buf = (ctypes.c_byte * 6)()
                 mac_len = ctypes.c_ulong(6)
-                dest_ip = struct.unpack('<I', socket.inet_aton(ip_str))[0]
+                dest_ip = struct.unpack('=I', socket.inet_aton(ip_str))[0]
                 ret = p_send_arp(dest_ip, 0, ctypes.byref(mac_buf), ctypes.byref(mac_len))
                 if ret == 0 and mac_len.value == 6:
                     mac_str = ':'.join(f'{b & 0xff:02X}' for b in mac_buf)

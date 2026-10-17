@@ -67,12 +67,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Synchronize sidebar scan target with scan-subnet input
+  // Synchronize sidebar scan target with scan-subnet input and validate
   const scanSubnetInput = document.getElementById("scan-subnet");
   if (scanSubnetInput) {
     scanSubnetInput.addEventListener("input", (e) => {
       const sidebarTarget = document.getElementById("sidebar-target-subnet");
       if (sidebarTarget) sidebarTarget.innerText = e.target.value.trim() || "192.168.1.0/24";
+      validateScanTarget();
     });
   }
 
@@ -236,26 +237,40 @@ async function executeDiscoveryScan() {
     }
 
     const result = await res.json();
+    const activeCount = result.devices_found || 0;
+    const importedCount = result.devices_imported !== undefined ? result.devices_imported : (result.skipped_hosts ? activeCount - result.skipped_hosts.length : activeCount);
+    const skippedCount = result.devices_skipped !== undefined ? result.devices_skipped : (result.skipped_hosts ? result.skipped_hosts.length : 0);
+
     feedback.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
     feedback.style.border = "1px solid rgba(16, 185, 129, 0.3)";
     feedback.style.color = "#34d399";
-    feedback.innerHTML = `✓ ${result.message} (${result.devices_found} active hosts identified).`;
+    feedback.innerHTML = `✓ ${escapeHtml(result.message)}`;
 
     if (result.skipped_hosts && result.skipped_hosts.length > 0) {
-      document.getElementById("scan-summary-active").innerText = `Active Hosts Detected: ${result.devices_found}`;
-      document.getElementById("scan-summary-imported").innerText = `Imported to Inventory: ${result.devices_found - result.skipped_hosts.length}`;
-      document.getElementById("scan-summary-skipped").innerText = `Not Imported: ${result.skipped_hosts.length}`;
+      const activeEl = document.getElementById("scan-summary-active");
+      const importedEl = document.getElementById("scan-summary-imported");
+      const skippedEl = document.getElementById("scan-summary-skipped");
+      if (activeEl) activeEl.innerText = `Active Hosts Detected: ${activeCount}`;
+      if (importedEl) importedEl.innerText = `Imported to Inventory: ${importedCount}`;
+      if (skippedEl) skippedEl.innerText = `Observed Only: ${skippedCount}`;
       
       const tbody = document.getElementById("skipped-hosts-table-body");
       if (tbody) {
         tbody.innerHTML = "";
         result.skipped_hosts.forEach(h => {
+          const isScanningHost = h.reason && h.reason.toLowerCase().includes("local scanning");
+          const badgeClass = isScanningHost ? "badge-low" : "badge-medium";
+          const badgeBg = isScanningHost ? "rgba(107, 114, 128, 0.2)" : "rgba(245, 158, 11, 0.2)";
+          const badgeColor = isScanningHost ? "#9ca3af" : "#fbbf24";
+          const badgeBorder = isScanningHost ? "1px solid rgba(107, 114, 128, 0.4)" : "1px solid rgba(245, 158, 11, 0.4)";
+          const statusText = isScanningHost ? "Excluded (Local Host)" : "Observed (Unimported)";
+
           const tr = document.createElement("tr");
           tr.innerHTML = `
             <td><span class="tech-val">${escapeHtml(h.ip_address)}</span></td>
-            <td><span class="tech-val" style="color: var(--text-muted);">${escapeHtml(h.mac_address || "Unavailable")}</span></td>
-            <td><span class="badge badge-low" style="background-color: var(--warning); color: #000;">Not Imported</span></td>
-            <td><small>${escapeHtml(h.reason)}</small></td>
+            <td><span class="tech-val" style="color: var(--text-muted);">${escapeHtml(h.mac_address || "Unavailable (L3 / Unverified)")}</span></td>
+            <td><span class="badge ${badgeClass}" style="background-color: ${badgeBg}; color: ${badgeColor}; border: ${badgeBorder};">${statusText}</span></td>
+            <td><small style="color: #e5e7eb;">${escapeHtml(h.reason)}</small></td>
           `;
           tbody.appendChild(tr);
         });
@@ -287,6 +302,55 @@ async function quickScan() {
 }
 
 let networkAutoDetected = false;
+let detectedLocalIp = "";
+let detectedSubnetCidr = "";
+
+function setScanSubnet(cidr) {
+  const subnetInput = document.getElementById("scan-subnet");
+  if (subnetInput) {
+    subnetInput.value = cidr;
+    const sidebarTarget = document.getElementById("sidebar-target-subnet");
+    if (sidebarTarget) sidebarTarget.innerText = cidr;
+    validateScanTarget();
+  }
+}
+
+function validateScanTarget() {
+  const input = document.getElementById("scan-subnet");
+  const warningEl = document.getElementById("target-subnet-warning");
+  if (!input || !warningEl) return;
+
+  const val = input.value.trim();
+  if (!val) {
+    warningEl.style.display = "none";
+    return;
+  }
+
+  // Check if user entered their own laptop IP
+  if (detectedLocalIp && (val === detectedLocalIp || val === `${detectedLocalIp}/32`)) {
+    warningEl.style.display = "block";
+    warningEl.style.backgroundColor = "rgba(245, 158, 11, 0.15)";
+    warningEl.style.border = "1px solid rgba(245, 158, 11, 0.4)";
+    warningEl.style.color = "#fbbf24";
+    warningEl.innerHTML = `⚠️ <strong>Notice:</strong> <code>${escapeHtml(val)}</code> is your local scanning computer's IP. Only this single host will be scanned, and scanning hosts are excluded from inventory to prevent self-discovery alerts. ` +
+      (detectedSubnetCidr ? `<button class="btn btn-secondary btn-sm" style="margin-left: 0.5rem; padding: 0.2rem 0.5rem; font-size: 0.8rem;" onclick="setScanSubnet('${escapeHtml(detectedSubnetCidr)}')">Scan Entire Subnet (${escapeHtml(detectedSubnetCidr)})</button>` : '');
+    return;
+  }
+
+  // Check if single IP is entered without CIDR mask
+  const isSingleIp = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(val) || val.endsWith("/32");
+  if (isSingleIp) {
+    warningEl.style.display = "block";
+    warningEl.style.backgroundColor = "rgba(59, 130, 246, 0.15)";
+    warningEl.style.border = "1px solid rgba(59, 130, 246, 0.4)";
+    warningEl.style.color = "#93c5fd";
+    warningEl.innerHTML = `ℹ️ Single-host target selected (only <code>${escapeHtml(val)}</code> will be scanned). ` +
+      (detectedSubnetCidr && val !== detectedSubnetCidr ? `<button class="btn btn-secondary btn-sm" style="margin-left: 0.5rem; padding: 0.2rem 0.5rem; font-size: 0.8rem;" onclick="setScanSubnet('${escapeHtml(detectedSubnetCidr)}')">Switch to Full Subnet (${escapeHtml(detectedSubnetCidr)})</button>` : '');
+    return;
+  }
+
+  warningEl.style.display = "none";
+}
 
 async function autoDetectNetwork(force = false) {
   if (networkAutoDetected && !force) return;
@@ -299,6 +363,9 @@ async function autoDetectNetwork(force = false) {
     const res = await fetch("/api/devices/network-info", { headers: getAuthHeaders() });
     const data = await res.json();
     if (res.ok && data.status === "success") {
+      detectedLocalIp = data.local_ip || "";
+      detectedSubnetCidr = data.network_cidr || "";
+
       const ifaceEl = document.getElementById("net-interface");
       const ipEl = document.getElementById("net-ip");
       const subnetEl = document.getElementById("net-subnet");
@@ -313,6 +380,7 @@ async function autoDetectNetwork(force = false) {
       if (sidebarTarget) sidebarTarget.innerText = data.network_cidr;
       
       networkAutoDetected = true;
+      validateScanTarget();
       if (force) showToast("Network successfully auto-detected.", "success");
     } else {
       const ifaceEl = document.getElementById("net-interface");
@@ -349,6 +417,16 @@ async function loadDiscoveryTable() {
     }
 
     devices.forEach(d => {
+      let statusColor = "#ef4444";
+      let statusIcon = "○";
+      if (d.status === "Online") {
+        statusColor = "var(--success)";
+        statusIcon = "●";
+      } else if (d.status === "Not Yet Observed") {
+        statusColor = "#60a5fa";
+        statusIcon = "◌";
+      }
+
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><span class="tech-val">${escapeHtml(d.ip_address)}</span></td>
@@ -357,7 +435,7 @@ async function loadDiscoveryTable() {
         <td><span class="type-tag">${escapeHtml(d.detection_method || "Simulated Testbed")}</span></td>
         <td><small>${escapeHtml(d.first_seen)}</small></td>
         <td><small>${escapeHtml(d.last_seen)}</small></td>
-        <td><span style="color: var(--success); font-size: 0.85rem;">● ${escapeHtml(d.status)}</span></td>
+        <td><span style="color: ${statusColor}; font-size: 0.85rem; font-weight: 500;">${statusIcon} ${escapeHtml(d.status)}</span></td>
       `;
       tbody.appendChild(tr);
     });
@@ -409,8 +487,8 @@ function renderDeviceInventory(devices) {
     if (origin === "Manual Entry" || origin === "Manually Registered") originBadgeClass = "badge-manual";
     else if (origin === "Authorized Network Discovery") originBadgeClass = "badge-active";
 
-    let statusColor = "var(--text-muted)";
-    let statusIcon = "●";
+    let statusColor = "#ef4444";
+    let statusIcon = "○";
     if (d.status === "Online") {
       statusColor = "var(--success)";
       statusIcon = "●";
@@ -833,7 +911,7 @@ async function inspectDevice(deviceId) {
       <div style="font-size: 0.85rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem;">
         <div><strong>Device Origin:</strong> <span class="badge ${dev.detection_method === 'Manual Entry' || dev.detection_method === 'Manually Registered' ? 'badge-manual' : (dev.detection_method === 'Authorized Network Discovery' ? 'badge-active' : 'badge-simulated')}">${escapeHtml(dev.detection_method || "Simulated Testbed")}</span></div>
         <div><strong>Authorization:</strong> <span class="badge ${dev.is_known_device ? 'badge-authorized' : 'badge-unauthorized'}">${dev.is_known_device ? "✓ Approved Asset" : "⚠️ Pending Approval"}</span></div>
-        <div><strong>Status:</strong> <span style="color: ${dev.status === 'Online' ? 'var(--success)' : (dev.status === 'Not Yet Observed' ? '#60a5fa' : 'var(--text-muted)')}; font-weight: 500;">${dev.status === 'Online' ? '●' : (dev.status === 'Not Yet Observed' ? '◌' : '●')} ${escapeHtml(dev.status)}</span></div>
+        <div><strong>Status:</strong> <span style="color: ${dev.status === 'Online' ? 'var(--success)' : (dev.status === 'Not Yet Observed' ? '#60a5fa' : '#ef4444')}; font-weight: 500;">${dev.status === 'Online' ? '●' : (dev.status === 'Not Yet Observed' ? '◌' : '○')} ${escapeHtml(dev.status)}</span></div>
         <div><strong>Firmware Version:</strong> ${escapeHtml(dev.firmware_version || "Unknown")}</div>
         <div><strong>Credential Status:</strong> ${escapeHtml(dev.credential_status || "Unknown")}</div>
         <div><strong>Open Ports:</strong> ${dev.open_ports && dev.open_ports.length > 0 ? dev.open_ports.join(", ") : "None Detected"}</div>

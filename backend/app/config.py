@@ -44,3 +44,9 @@ DEFAULT_USERS = [
         "role": "viewer"
     }
 ]
+
+# Device Online / Offline Status Tracking Configuration
+# Consecutive missed scans required to confirm an unobserved device as Offline
+OFFLINE_MISSED_SCANS_THRESHOLD = int(os.getenv("OFFLINE_MISSED_SCANS_THRESHOLD", "2"))
+# Time-based confirmation: unobserved time elapsed (seconds) after which missing device is marked Offline
+OFFLINE_TIMEOUT_SECONDS = int(os.getenv("OFFLINE_TIMEOUT_SECONDS", "180"))

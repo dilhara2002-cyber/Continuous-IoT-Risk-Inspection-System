@@ -177,18 +177,27 @@
             </div>
           </div>
 
+          <div id="target-subnet-warning" style="display: none; margin-top: 0.75rem; padding: 0.75rem; border-radius: var(--radius); font-size: 0.85rem; border: 1px solid var(--border-color);">
+          </div>
+
           <div id="scan-warning" style="display: none; margin-top: 1rem; padding: 0.75rem; border-radius: var(--radius); background-color: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); color: #fbbf24; font-size: 0.85rem;">
             ⚠️ Authorized private/test networks only. Do not scan public IP addresses.
           </div>
 
           <div id="scan-feedback" style="margin-top: 1rem; display: none; padding: 0.75rem; border-radius: var(--radius); font-size: 0.85rem;"></div>
           
-          <div id="skipped-hosts-section" style="display: none; margin-top: 1.5rem; background-color: var(--bg-main); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1rem;">
-            <h4 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #fff;">Observed Hosts — Not Added to Inventory</h4>
-            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-              <span id="scan-summary-active" style="font-weight: bold;">Active Hosts Detected: 0</span> | 
-              <span id="scan-summary-imported" style="font-weight: bold; color: var(--success);">Imported to Inventory: 0</span> | 
-              <span id="scan-summary-skipped" style="font-weight: bold; color: var(--warning);">Not Imported: 0</span>
+          <div id="skipped-hosts-section" style="display: none; margin-top: 1.5rem; background-color: var(--bg-main); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <h4 style="margin: 0; font-size: 0.95rem; color: #fff;">Observed Hosts — Not Added to Inventory</h4>
+              <span class="badge badge-low" style="background-color: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4);">Observed / Non-Inventory</span>
+            </div>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+              These devices were confirmed active on the network but were not imported into the database inventory (e.g. local scanning host or unverified L2 MAC address).
+            </p>
+            <div style="display: flex; gap: 1rem; font-size: 0.85rem; margin-bottom: 1rem; padding: 0.75rem; background-color: rgba(255,255,255,0.03); border-radius: var(--radius); border: 1px solid var(--border-color);">
+              <div><span id="scan-summary-active" style="font-weight: bold; color: #93c5fd;">Active Hosts Detected: 0</span></div>
+              <div style="border-left: 1px solid var(--border-color); padding-left: 1rem;"><span id="scan-summary-imported" style="font-weight: bold; color: var(--success);">Imported to Inventory: 0</span></div>
+              <div style="border-left: 1px solid var(--border-color); padding-left: 1rem;"><span id="scan-summary-skipped" style="font-weight: bold; color: #fbbf24;">Observed Only: 0</span></div>
             </div>
             <div style="overflow-x: auto;">
               <table class="data-table" style="font-size: 0.85rem; margin-bottom: 0;">
@@ -196,8 +205,8 @@
                   <tr>
                     <th>IP Address</th>
                     <th>MAC Address</th>
-                    <th>Import Status</th>
-                    <th>Reason</th>
+                    <th>Status</th>
+                    <th>Reason / Details</th>
                   </tr>
                 </thead>
                 <tbody id="skipped-hosts-table-body">

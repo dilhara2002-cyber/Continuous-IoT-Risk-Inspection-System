@@ -30,19 +30,20 @@ def list_alerts(
 
     results = []
     for r in rows:
+        r_dict = dict(r)
         results.append(AlertResponse(
-            id=r["id"],
-            device_id=r["device_id"],
-            device_hostname=r["device_hostname"],
-            device_ip=r["device_ip"],
-            alert_type=r["alert_type"],
-            severity=r["severity"],
-            title=r["title"],
-            description=r["description"],
-            is_resolved=bool(r["is_resolved"]),
-            created_at=str(r["created_at"]),
-            resolved_at=str(r["resolved_at"]) if r["resolved_at"] else None,
-            resolved_by=r["resolved_by"]
+            id=r_dict["id"],
+            device_id=r_dict.get("device_id"),
+            device_hostname=r_dict.get("device_hostname"),
+            device_ip=r_dict.get("device_ip"),
+            alert_type=r_dict["alert_type"],
+            severity=r_dict["severity"],
+            title=r_dict["title"],
+            description=r_dict["description"],
+            is_resolved=bool(r_dict.get("is_resolved", 0)),
+            created_at=str(r_dict["created_at"]) if r_dict.get("created_at") else None,
+            resolved_at=str(r_dict["resolved_at"]) if r_dict.get("resolved_at") else None,
+            resolved_by=r_dict.get("resolved_by")
         ))
     return results
 
