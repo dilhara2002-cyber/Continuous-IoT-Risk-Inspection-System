@@ -78,9 +78,21 @@ def init_database():
         description TEXT NOT NULL,
         is_resolved BOOLEAN DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved_at TIMESTAMP,
+        resolved_by TEXT,
         FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE SET NULL
     );
     """)
+
+    # Migration: ensure resolved_at and resolved_by exist if table was created without them
+    try:
+        cursor.execute("ALTER TABLE alerts ADD COLUMN resolved_at TIMESTAMP;")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE alerts ADD COLUMN resolved_by TEXT;")
+    except Exception:
+        pass
 
     # 5. Audit Logs Table (Chapter 7.8, 11.3)
     cursor.execute("""

@@ -109,4 +109,7 @@ class ScanResponse(BaseModel):
     devices_found: int
     new_devices_added: int
     message: str
+    devices_imported: Optional[int] = None
+    devices_skipped: Optional[int] = None
     skipped_hosts: Optional[List[dict]] = None
+    devices_marked_offline: Optional[int] = None

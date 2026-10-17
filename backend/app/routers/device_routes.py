@@ -59,6 +59,10 @@ def get_device_origin(device_id: int, status: str = "", ip_address: str = "", ma
         discovery_service.method_cache[device_id] = "manual"
         return "Manual Entry"
 
+    if ip_address.startswith("192.168.1."):
+        discovery_service.method_cache[device_id] = "simulated"
+        return "Simulated Testbed"
+
     try:
         conn = get_db_connection()
         search_terms = [f"%({device_id})%", f"%#{device_id}%"]
@@ -91,7 +95,7 @@ def get_device_origin(device_id: int, status: str = "", ip_address: str = "", ma
     if cached == "simulated":
         return "Simulated Testbed"
 
-    if ip_address.startswith("10.176.56."):
+    if not ip_address.startswith("192.168.1."):
         discovery_service.method_cache[device_id] = "active"
         return "Authorized Network Discovery"
 
